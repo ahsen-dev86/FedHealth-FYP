@@ -1,0 +1,149 @@
+# docker-compose.yml — the whole FedHealth stack in one command.
+#
+#   Core app (DB + inference + backend + frontend):
+#       docker compose up --build
+#       -> Frontend  http://localhost:8080
+#          Backend   http://localhost:4000
+#          Inference http://localhost:8000
+#
+#   Optional federation demo (Flower server + 3 lab clients, plaintext FedAvg):
+#       docker compose --profile federation up --build
+#       (This is a batch job: it trains for FL_ROUNDS then the containers exit.
+#        The Paillier/blind-server variant runs via `python fl/run_simulation_paillier.py`
+#        — orchestrating key distribution across N containers is more than the
+#        demo needs, so it's kept as the single-command simulation. Flagged.)
+#
+# Copy .env.example -> .env and set at least JWT_SECRET before anything real.
+
+name: fedhealth
+
+services:
+  # --- PostGIS database. schema/seed/migration auto-run on first init. --------
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fedhealth}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Ordered init scripts (schema -> seed -> migration).
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/seed/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./db/migrations/002_add_rule_flags_symptoms.sql:/docker-entrypoint-initdb.d/03_migration.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fedhealth}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "5432:5432"
+
+  # --- Python inference microservice (fallback/rules until Colab artifacts). --
+  inference:
+    build:
+      context: .
+      dockerfile: ml/inference_service/Dockerfile
+    environment:
+      ANEMIA_CSV: /app/anemia_diagnosed_cbc_data_v4.csv
+      MODELS_DIR: /models
+      PORT: "8000"
+    volumes:
+      # Drop your Colab-trained artifacts here to activate the real model:
+      #   ./models/cbc_multiclass/{preprocessor.joblib,ann.keras,xgb.json,meta.json}
+      - ./models:/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    ports:
+      - "8000:8000"
+
+  # --- Express API (auth, RBAC, audit, domain routes). Tesseract baked in. ----
+  backend:
+    build:
+      context: ./backend
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: ${APP_DB_USER:-fedhealth_app}
+      PGPASSWORD: ${APP_DB_PASSWORD:-change_me_in_prod}
+      PGDATABASE: ${POSTGRES_DB:-fedhealth}
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me}
+      INFERENCE_URL: http://inference:8000
+    depends_on:
+      db:
+        condition: service_healthy
+      inference:
+        condition: service_started
+    ports:
+      - "4000:4000"
+
+  # --- React SPA served by nginx, proxying /api -> backend. -------------------
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "8080:80"
+
+  # ======================= Federation demo (profile) =========================
+  fl-server:
+    build:
+      context: .
+      dockerfile: fl/server/Dockerfile
+    environment:
+      FL_BIND: 0.0.0.0:8080
+      FL_ROUNDS: ${FL_ROUNDS:-5}
+      FL_LABS: ${FL_LABS:-3}
+    profiles: ["federation"]
+
+  fl-client-1:
+    build:
+      context: .
+      dockerfile: fl/client/Dockerfile
+    environment:
+      FL_SERVER: fl-server:8080
+      LAB_ID: lab-00
+      SHARD_CSV: ""            # empty -> derive partition on the fly
+      PARTITION_ID: "0"
+      NUM_PARTITIONS: "3"
+      PARTITION_MODE: non_iid
+    depends_on: [fl-server]
+    profiles: ["federation"]
+
+  fl-client-2:
+    build:
+      context: .
+      dockerfile: fl/client/Dockerfile
+    environment:
+      FL_SERVER: fl-server:8080
+      LAB_ID: lab-01
+      SHARD_CSV: ""
+      PARTITION_ID: "1"
+      NUM_PARTITIONS: "3"
+      PARTITION_MODE: non_iid
+    depends_on: [fl-server]
+    profiles: ["federation"]
+
+  fl-client-3:
+    build:
+      context: .
+      dockerfile: fl/client/Dockerfile
+    environment:
+      FL_SERVER: fl-server:8080
+      LAB_ID: lab-02
+      SHARD_CSV: ""
+      PARTITION_ID: "2"
+      NUM_PARTITIONS: "3"
+      PARTITION_MODE: non_iid
+    depends_on: [fl-server]
+    profiles: ["federation"]
+
+volumes:
+  db-data:

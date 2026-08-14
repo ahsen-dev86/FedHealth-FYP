@@ -1,0 +1,11 @@
+# Exclude all zip archives
+*.zip
+
+# Common noise
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+node_modules/
+.DS_Store
