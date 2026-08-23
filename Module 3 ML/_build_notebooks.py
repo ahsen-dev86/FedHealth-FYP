@@ -27,33 +27,59 @@ def write(name, cells):
 
 # Shared setup cell: makes fedhealth_ml importable + points to the data dir.
 SETUP = r'''# --- Setup ------------------------------------------------------------------
-# Make the shared fedhealth_ml package importable in Colab. Pick ONE option:
+# Module 3 Colab setup.
 #
-#   (A) Clone your project repo (recommended):
-# !git clone https://github.com/<you>/fedhealth.git
-# import sys; sys.path.append('/content/fedhealth/ml')
+# Prerequisite:
+# Clone the GitHub testing branch into /content/FedHealth-FYP before running
+# these notebooks. Dataset CSVs remain in Google Drive at MyDrive/FYP.
 #
-#   (B) Upload the `ml/` folder via the Files panel, then:
-# import sys; sys.path.append('/content/ml')
-#
-#   (C) Mount Google Drive where you keep the repo:
-# from google.colab import drive; drive.mount('/content/drive')
-# import sys; sys.path.append('/content/drive/MyDrive/fedhealth/ml')
+# This repository stores shared files flat in "Module 3 ML/". The code below
+# creates the temporary "fedhealth_ml" package layout expected by the notebooks.
+
+from pathlib import Path
+from google.colab import drive
+import os
+import shutil
 import sys
-sys.path.append('/content/fedhealth/ml')  # <-- adjust to match your choice above
 
-# Install anything Colab is missing (Colab already has numpy/pandas/sklearn/tf).
-!pip -q install xgboost>=2.0 scipy joblib 2>/dev/null
+REPO_DIR = Path('/content/FedHealth-FYP')
+SOURCE_DIR = REPO_DIR / 'Module 3 ML'
+assert SOURCE_DIR.exists(), (
+    'Repository files are missing. Clone the GitHub testing branch first.'
+)
 
-# Where the three CSVs live. Upload them or point DATA_DIR at your Drive folder.
-DATA_DIR = '/content'          # <-- put the CSVs here (or change this path)
+if not os.path.exists('/content/drive/MyDrive'):
+    drive.mount('/content/drive')
+
+!pip -q install -r "/content/FedHealth-FYP/Module 3 ML/requirements.txt"
+
+RUNTIME_DIR = Path('/content/fedhealth_runtime')
+PACKAGE_DIR = RUNTIME_DIR / 'fedhealth_ml'
+PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+for filename in ['schema.py', 'preprocess.py', 'models.py', 'rules.py']:
+    shutil.copy2(SOURCE_DIR / filename, PACKAGE_DIR / filename)
+
+(PACKAGE_DIR / '__init__.py').write_text(
+    '# Temporary Colab package for Module 3 validation.\n'
+)
+
+if str(RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_DIR))
+
+DATA_DIR = '/content/drive/MyDrive/FYP'
 ANEMIA = f'{DATA_DIR}/anemia_diagnosed_cbc_data_v4.csv'
 THAL   = f'{DATA_DIR}/thalassemia_alphanorm.csv'
 LEUK   = f'{DATA_DIR}/biased_leukemia_dataset.csv'
 
+for dataset_path in [ANEMIA, THAL, LEUK]:
+    assert os.path.exists(dataset_path), f'Dataset not found: {dataset_path}'
+
 import numpy as np, pandas as pd, matplotlib.pyplot as plt
 from fedhealth_ml import schema, preprocess as pp
+
 print('fedhealth_ml loaded. Model A features:', len(schema.MODEL_A_FEATURES))
+print('All three datasets found in Google Drive.')
 '''
 
 # ============================================================================
