@@ -93,7 +93,7 @@ write("01_eda.ipynb", [
          "print(desc.round(1))\n"
          "bad = {}\n"
          "for c in schema.MODEL_A_FEATURES:\n"
-         "    lo, hi = schema.PLAUSIBLE_RANGES[c.upper()]\n"
+         "    lo, hi = (schema.PLAUSIBLE_RANGES.get(c) or schema.PLAUSIBLE_RANGES[c.upper()])\n"
          "    bad[c] = int(((a[c] < lo) | (a[c] > hi)).sum())\n"
          "print('\\nout-of-range counts per feature:'); print(pd.Series(bad)[lambda s: s>0])"),
     md("## 4. Case study: why `biased_leukemia_dataset.csv` is excluded\n"
