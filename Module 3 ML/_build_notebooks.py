@@ -296,127 +296,105 @@ write("03_train_modelA.ipynb", [
 ])
 
 # ============================================================================
-# 04 — Train Model B (beta-thalassemia trait)  [dataset user-sourced]
+# 04 — CBC thalassemia risk-flag validation
 # ============================================================================
 write("04_train_modelB.ipynb", [
-    md("# FedHealth — Notebook 04: Train Model B (beta-thalassemia trait)\n"
-       "\n"
-       "**Why this notebook needs a new dataset.** Notebook 01 showed the original "
-       "`thalassemia_alphanorm.csv` (alpha *silent carriers*) is not separable from "
-       "CBC (AUC ~0.5) — alpha carriers are largely invisible on a blood count. "
-       "**Beta-thalassemia trait**, by contrast, is genuinely CBC-detectable (low "
-       "MCV/MCH, high RBC, Mentzer < 13) and is a well-studied ML target. So Model "
-       "B is a beta-thal-trait screener; you supply the dataset (see below).\n"
-       "\n"
-       "This is the ML half of the thal strategy; the interpretable rule layer "
-       "(`fedhealth_ml.rules`, used in Notebook 03) is the other half and needs no "
-       "new data."),
-    md("## Dataset options (pick one, download, drop the CSV into Colab)\n"
-       "Public CBC datasets for beta-thal trait vs iron deficiency / normal:\n"
-       "\n"
-       "- **NIBD Karachi (301 CBC reports)** — *Pakistani data*, best fit for the "
-       "scope's 'locally representative' claim. Described in the PLOS One 2025 "
-       "paper 'From CBC to clarity'; may require requesting from the authors.\n"
-       "- **Mendeley — Iraq thalassemia (1073 patients, CBC + HPLC):** "
-       "https://data.mendeley.com/datasets/p8rv84hrbs/1\n"
-       "- **Mendeley — Anemia CBC, Lucknow India (has RDW, RBC, WBC, PLT):** "
-       "https://data.mendeley.com/datasets/dy9mfjchm7/1\n"
-       "- **Mendeley — Thalassemia clinical, Bangladesh (617, RBC indices + HbF):** "
-       "https://data.mendeley.com/datasets/8kcdkxmcjw/1\n"
-       "- **Kaggle** — search 'thalassemia CBC' (e.g. a 616-record set with 13 CBC "
-       "features incl. RDW).\n"
-       "\n"
-       "Prefer a dataset that includes **RDW** (unlocks the Green-King / RDW-index "
-       "discriminants) and, ideally, an **iron-deficiency** class so the model "
-       "learns the clinically hard IDA-vs-BTT boundary, not just BTT-vs-healthy."),
+    md("""# FedHealth — Notebook 04: CBC thalassemia risk-flag validation
+
+## Purpose
+
+FedHealth uses a routine CBC to flag **possible thalassemia risk**, alongside
+Model A's healthy, anemia, and leukemia-risk outputs. This is an interpretable
+screening layer, not a diagnosis and not a thalassemia subtype classifier.
+
+It evaluates the existing CBC discriminant-index rule on `twoalphas.csv`.
+Confirmation requires clinical review and haemoglobin electrophoresis."""),
     code(SETUP),
-    md("## 1. Configure for YOUR dataset\n"
-       "Set the path, the label column, and the label map to match the file you "
-       "downloaded. Class keys must come from `schema.MODEL_B_CLASSES` "
-       "(drop 'iron_deficiency' if your dataset is binary)."),
-    code("from fedhealth_ml import schema, preprocess as pp, models, rules\n"
-         "\n"
-         "THAL_CSV  = f'{DATA_DIR}/beta_thal_cbc.csv'   # <-- your downloaded file\n"
-         "LABEL_COL = 'phenotype'                        # <-- your label column\n"
-         "# Map your dataset's raw label strings -> canonical class keys.\n"
-         "LABEL_MAP = {\n"
-         "    'normal': 'normal', 'control': 'normal',\n"
-         "    'iron deficiency anemia': 'iron_deficiency', 'ida': 'iron_deficiency',\n"
-         "    'beta thalassemia trait': 'beta_thal_trait', 'btt': 'beta_thal_trait',\n"
-         "    'beta thalassemia minor': 'beta_thal_trait',\n"
-         "}\n"
-         "# Feature columns present in your file (subset of schema.MODEL_B_FEATURES).\n"
-         "FEATURES = [c for c in schema.MODEL_B_FEATURES]  # adjust if names differ\n"),
-    md("## 2. Load + inspect class balance"),
-    code("X, y = pp.load_thal(THAL_CSV, label_col=LABEL_COL, label_map=LABEL_MAP, features=FEATURES)\n"
-         "classes = [c for c in schema.MODEL_B_CLASSES if c in set(y)]\n"
-         "print('rows', len(X), '| features', list(X.columns))\n"
-         "print('class balance:', y.value_counts().to_dict())"),
-    md("## 3. GUARD: confirm the dataset actually has CBC signal\n"
-       "Learn from the alpha lesson — before training, verify separability. If the "
-       "cross-validated AUC/macro-F1 is near chance, STOP and pick a better "
-       "dataset rather than training a noise model."),
-    code("from sklearn.model_selection import cross_val_predict, StratifiedKFold\n"
-         "from sklearn.pipeline import make_pipeline\n"
-         "from sklearn.impute import SimpleImputer\n"
-         "from sklearn.preprocessing import StandardScaler\n"
-         "from sklearn.linear_model import LogisticRegression\n"
-         "from sklearn.metrics import f1_score\n"
-         "yi = pp.encode_labels(y, classes)\n"
-         "cv = StratifiedKFold(5, shuffle=True, random_state=42)\n"
-         "pipe = make_pipeline(SimpleImputer(strategy='median'), StandardScaler(),\n"
-         "                     LogisticRegression(max_iter=2000, class_weight='balanced'))\n"
-         "pred = cross_val_predict(pipe, X, yi, cv=cv)\n"
-         "mf1 = f1_score(yi, pred, average='macro')\n"
-         "print(f'5-fold macro-F1 = {mf1:.3f}')\n"
-         "assert mf1 > 0.6, 'Low signal (<0.6). Reconsider the dataset before training.'"),
-    md("## 4. Feature engineering: add discriminant indices (best of A + B)\n"
-       "We append the Mentzer/discriminant index VALUES as extra model features, "
-       "so the ANN+XGBoost hybrid benefits from the same clinical knowledge the "
-       "rule layer encodes."),
-    code("import numpy as np, pandas as pd\n"
-         "def add_indices(df):\n"
-         "    out = df.copy()\n"
-         "    recs = df.to_dict('records')\n"
-         "    idx = [rules.thalassemia_trait_flag(r)['indices'] for r in recs]\n"
-         "    for name in ['mentzer','england_fraser','shine_lal','srivastava','ehsani','sirdah']:\n"
-         "        out[f'idx_{name}'] = [d.get(name, {}).get('value', np.nan) for d in idx]\n"
-         "    return out\n"
-         "Xe = add_indices(X)\n"
-         "ENG_FEATURES = list(Xe.columns)\n"
-         "print('engineered feature count:', len(ENG_FEATURES))"),
-    md("## 5. Preprocess (fit on train only) + split"),
-    code("sp = pp.stratified_split(Xe, y, test_size=0.2, val_size=0.1, seed=42)\n"
-         "import os; ART='/content/artifacts/modelB'; os.makedirs(ART, exist_ok=True)\n"
-         "prep = pp.CBCPreprocessor(ENG_FEATURES).fit(sp['X_train'])\n"
-         "prep.save(f'{ART}/preprocessor.joblib')\n"
-         "Xtr, Xval, Xte = (prep.transform(sp[k]) for k in ['X_train','X_val','X_test'])\n"
-         "ytr = pp.encode_labels(sp['y_train'], classes)\n"
-         "yval = pp.encode_labels(sp['y_val'], classes)\n"
-         "yte  = pp.encode_labels(sp['y_test'], classes)\n"
-         "print('train', Xtr.shape, '| classes', classes)"),
-    md("## 6. Train the same Hybrid ANN -> XGBoost (small net for small data)"),
-    code("n = len(classes)\n"
-         "ann = models.build_ann(input_dim=Xtr.shape[1], n_classes=n, hidden=(32,16), dropout=0.3)\n"
-         "cw = models.class_weights(ytr, n)\n"
-         "models.train_ann(ann, Xtr, ytr, Xval, yval, class_weight=cw,\n"
-         "                 epochs=200, batch_size=16, patience=25, verbose=0)\n"
-         "hybrid = models.HybridModel(ann, classes, model_name='thal_screen', version='v1.0.0')\n"
-         "hybrid.fit_meta(Xtr, ytr, Xval, yval, n_estimators=200, max_depth=3)\n"
-         "print('trained. temperature T =', round(hybrid.temperature.T, 3))"),
-    md("## 7. Evaluate + save"),
-    code("proba = hybrid.predict_proba(Xte); pred = proba.argmax(1)\n"
-         "metrics = models.compute_metrics(yte, pred, classes)\n"
-         "print('macro-F1:', metrics['macro_f1'], '| balanced-acc:', metrics['balanced_accuracy'])\n"
-         "for c in classes:\n"
-         "    pc = metrics['per_class'][c]; print(f'  {c:18} recall={pc[\"recall\"]:.2f} support={pc[\"support\"]}')\n"
-         "hybrid.save(ART); models.write_registry_metrics(ART, metrics)\n"
-         "print('saved Model B artifacts ->', ART)"),
-    md("## 8. Federation + registry\n"
-       "Model B federates exactly like Model A (`models.get_ann_weights` -> Flower). "
-       "Register it as `thal_screen` in the ml_models table (Module 6 route). Note "
-       "for defense: the standalone `rules.thalassemia_trait_flag` gives an "
-       "interpretable second opinion that doesn't depend on this trained model."),
+
+    md("""## 1. Load the validation dataset
+
+`twoalphas.csv` contains known alpha-trait and silent-carrier records. It has no
+healthy/control group, so it can evaluate rule behaviour on known
+thalassemia-related records only; it cannot measure specificity or false-positive rate."""),
+    code("""from pathlib import Path
+from fedhealth_ml import rules
+
+THAL_CSV = f"{DATA_DIR}/twoalphas.csv"
+assert Path(THAL_CSV).exists(), f"Dataset not found: {THAL_CSV}"
+
+raw = pd.read_csv(THAL_CSV)
+required = {"phenotype", "hb", "rbc", "mcv", "mch"}
+missing = required - set(raw.columns)
+assert not missing, f"Missing required columns: {sorted(missing)}"
+
+print("Dataset:", THAL_CSV)
+print("Records:", len(raw))
+print("Phenotypes:", raw["phenotype"].value_counts().to_dict())"""),
+
+    md("""## 2. Apply the CBC risk flag
+
+The clinical gate makes the rule applicable only to microcytic CBC patterns.
+A positive flag means that a consensus of available indices favours a
+thalassemia-trait pattern over iron deficiency. It is not a confirmed diagnosis."""),
+    code("""records = []
+
+for _, row in raw.iterrows():
+    cbc = {
+        key: (None if pd.isna(value) else value)
+        for key, value in row.to_dict().items()
+    }
+    result = rules.thalassemia_trait_flag(cbc)
+
+    records.append({
+        "phenotype": cbc["phenotype"],
+        "rule_applicable": bool(result["applicable"]),
+        "risk_flagged": bool(result["flag"]),
+        "consensus": float(result["consensus"]),
+        "n_indices": int(result["n_indices"]),
+        "mentzer_index": result["mentzer_index"],
+        "rationale": result["rationale"],
+    })
+
+results = pd.DataFrame(records)
+
+summary = results.groupby("phenotype", dropna=False).agg(
+    records=("phenotype", "size"),
+    rule_applicable=("rule_applicable", "sum"),
+    risk_flagged=("risk_flagged", "sum"),
+    mean_consensus=("consensus", "mean"),
+)
+summary["applicable_rate"] = summary["rule_applicable"] / summary["records"]
+summary["flag_rate"] = summary["risk_flagged"] / summary["records"]
+
+print("THALASSEMIA RISK-FLAG VALIDATION")
+print(summary.round(3))"""),
+
+    md("""## 3. Strict verification and evidence export
+
+The CSV outputs are saved to Drive as reproducible validation evidence. No model
+weights are trained or saved because this notebook validates a transparent rule,
+rather than a subtype classifier."""),
+    code("""OUT = Path("/content/drive/MyDrive/FYP/validation/module3/thal_risk")
+OUT.mkdir(parents=True, exist_ok=True)
+
+results.to_csv(OUT / "twoalphas_rule_results.csv", index=False)
+summary.to_csv(OUT / "twoalphas_rule_summary.csv")
+
+assert len(results) == len(raw), "Every input record must receive a rule result."
+assert results["rule_applicable"].dtype == bool
+assert results["risk_flagged"].dtype == bool
+assert results["consensus"].between(0, 1).all()
+assert set(summary.index) == set(raw["phenotype"].dropna().unique())
+
+print("NOTEBOOK 04 VALIDATION: PASS")
+print("Saved results to:", OUT)
+print("Limitation: no healthy/control group; this does not measure specificity.")"""),
+
+    md("""## Conclusion
+
+Notebook 04 provides a transparent CBC-based thalassemia **risk flag** for the
+system's screening workflow. It does not claim to diagnose thalassemia, infer a
+subtype, or replace confirmatory testing."""),
 ])
 
 print("done")
