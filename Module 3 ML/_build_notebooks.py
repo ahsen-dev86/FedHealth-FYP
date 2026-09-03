@@ -199,9 +199,14 @@ write("02_preprocess.ipynb", [
          "cw = models.class_weights(ytr, len(schema.MODEL_A_CLASSES))\n"
          "for i, c in enumerate(schema.MODEL_A_CLASSES):\n"
          "    print(f'{c:34} n_train={int((ytr==i).sum()):4d}  weight={cw[i]:.2f}')"),
-    md("## 5. Save arrays for the training notebook"),
+    md("## 5. Save arrays for Notebook 03 and back them up to Drive"),
     code("np.savez(f'{ART}/arrays.npz', Xtr=Xtr, Xval=Xval, Xte=Xte, ytr=ytr, yval=yval, yte=yte)\n"
-         "print('saved ->', f'{ART}/arrays.npz')"),
+         "DRIVE_ART = f'{DATA_DIR}/validation/module3/modelA'\n"
+         "os.makedirs(DRIVE_ART, exist_ok=True)\n"
+         "for filename in ['arrays.npz', 'preprocessor.joblib']:\n"
+         "    shutil.copy2(f'{ART}/{filename}', f'{DRIVE_ART}/{filename}')\n"
+         "print('saved locally ->', ART)\n"
+         "print('backed up to Drive ->', DRIVE_ART)"),
     md("### Thalassemia preprocessing\n"
        "Deferred until the Model B dataset decision (Notebook 04). The same "
        "`pp.load_thal` + `CBCPreprocessor(schema.MODEL_B_FEATURES)` pipeline "
@@ -218,8 +223,17 @@ write("03_train_modelA.ipynb", [
        "Modules 4-5); XGBoost is the local meta-head. Output is a **calibrated "
        "per-condition confidence vector** — never a hard label."),
     code(SETUP),
-    md("## 1. Load the preprocessed arrays from Notebook 02"),
+    md("## 1. Load Notebook 02 artifacts from local storage or Drive"),
     code("ART = '/content/artifacts/modelA'\n"
+         "DRIVE_ART = f'{DATA_DIR}/validation/module3/modelA'\n"
+         "os.makedirs(ART, exist_ok=True)\n"
+         "for filename in ['arrays.npz', 'preprocessor.joblib']:\n"
+         "    local_path = Path(ART) / filename\n"
+         "    drive_path = Path(DRIVE_ART) / filename\n"
+         "    if not local_path.exists():\n"
+         "        assert drive_path.exists(), f'Missing {filename}. Run Notebook 02 first.'\n"
+         "        shutil.copy2(drive_path, local_path)\n"
+         "print('Notebook 02 artifacts ready ->', ART)\n"
          "d = np.load(f'{ART}/arrays.npz')\n"
          "Xtr, Xval, Xte = d['Xtr'], d['Xval'], d['Xte']\n"
          "ytr, yval, yte = d['ytr'], d['yval'], d['yte']\n"
@@ -280,8 +294,14 @@ write("03_train_modelA.ipynb", [
        "service, and the ml_models registry)"),
     code("hybrid.save(ART)\n"
          "models.write_registry_metrics(ART, metrics)\n"
-         "print('saved: ann.keras, xgb.json, meta.json, metrics.json in', ART)\n"
-         "# The preprocessor.joblib from Notebook 02 sits alongside these."),
+         "os.makedirs(DRIVE_ART, exist_ok=True)\n"
+         "for filename in ['ann.keras', 'xgb.json', 'meta.json', 'metrics.json',\n"
+         "                 'preprocessor.joblib', 'arrays.npz']:\n"
+         "    local_path = Path(ART) / filename\n"
+         "    if local_path.exists():\n"
+         "        shutil.copy2(local_path, Path(DRIVE_ART) / filename)\n"
+         "print('saved locally ->', ART)\n"
+         "print('backed up to Drive ->', DRIVE_ART)"),
     md("## 7. How this plugs into Flower (Module 4) and the registry\n"
        "```python\n"
        "# FL client: the ANN weights ARE the federated parameters.\n"
