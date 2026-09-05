@@ -281,11 +281,27 @@ write("03_train_modelA.ipynb", [
        "and screens — it does not diagnose."),
     code("from fedhealth_ml import rules\n"
          "# Show the flag for the same 3 samples, using their raw (unscaled) CBC.\n"
-         "raw_rows = sp['X_test'].iloc[:3].to_dict('records') if 'sp' in dir() else None\n"
-         "# If sp isn't in memory (ran 03 standalone), reload raw test rows:\n"
-         "if raw_rows is None:\n"
-         "    X_raw, y_raw = pp.load_anemia(ANEMIA)\n"
-         "    raw_rows = X_raw.iloc[:3].to_dict('records')\n"
+         '# Recreate the same split used by Notebook 02.\n'
+         'X_example, y_example = pp.load_anemia(ANEMIA)\n'
+         'example_split = pp.stratified_split(\n'
+         '    X_example, y_example, test_size=0.2, val_size=0.1, seed=42\n'
+         ')\n'
+         '\n'
+         '# Verify the raw records correspond to the loaded test artifacts.\n'
+         "example_prep = pp.CBCPreprocessor.load(f'{ART}/preprocessor.joblib')\n"
+         'np.testing.assert_allclose(\n'
+         "    example_prep.transform(example_split['X_test']),\n"
+         '    Xte, rtol=1e-5, atol=1e-6,\n'
+         "    err_msg='Raw test rows do not match the saved test arrays.'\n"
+         ')\n'
+         'np.testing.assert_array_equal(\n'
+         "    pp.encode_labels(example_split['y_test'], schema.MODEL_A_CLASSES),\n"
+         '    yte,\n'
+         "    err_msg='Recreated test labels do not match the saved labels.'\n"
+         ')\n'
+         '\n'
+         "raw_rows = example_split['X_test'].iloc[:3].to_dict('records')\n"
+         "print('Example alignment verified: model scores and rules use the same rows.')\n"
          "for i, r in enumerate(raw_rows):\n"
          "    f = rules.thalassemia_trait_flag(r)\n"
          "    print(f'sample {i}: applicable={f[\"applicable\"]} flag={f[\"flag\"]} '\n"
