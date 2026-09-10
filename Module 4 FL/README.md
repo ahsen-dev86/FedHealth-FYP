@@ -1,100 +1,73 @@
-# FedHealth — Federated Learning Module (Module 4)
+# FedHealth Module 4 — Federated Learning
 
-The Lab Tier (Flower clients), the Server Tier (blind aggregator), and FedAvg.
-Federates the **Model A ANN** from Module 3; the XGBoost head stays local per
-lab (trees aren't weight-averageable). Consumes the Module 3 preprocessor so
-every lab produces identical feature vectors.
+Module 4 is the plaintext Flower/FedAvg baseline for the Module 3 Model A ANN architecture.
+Each lab keeps its CBC rows locally and sends ANN parameters plus example counts to the server.
+The shared Module 3 preprocessor gives every lab the same 14-feature order and scaling.
+Module 4 does not exchange or train the XGBoost head. Module 5 adds Paillier encryption.
 
-## Layout
-```
-fl/
-├── common/
-│   ├── partition.py   # split one dataset into N lab shards (iid / non_iid)
-│   └── task.py        # shared model build, preprocessor, partition loading, metrics
-├── client/
-│   ├── lims_wrapper.py  # mock LIMS connector + normalization (6.3.1)
-│   ├── client.py        # Flower NumPyClient: local training engine (6.3.2)
-│   └── Dockerfile
-├── server/
-│   ├── strategy.py    # FedHealthStrategy: explicit FedAvg with Paillier hooks (6.4.2)
-│   ├── server.py      # Flower server, optional TLS (6.4)
-│   └── Dockerfile
-├── run_simulation.py  # one-command in-process federation (no Docker)
-├── scripts/gen_certs.sh
-└── requirements.txt
-```
+## Actual files
 
-## Run it — simulation (easiest, no Docker)
-```bash
-pip install -r fl/requirements.txt
-python fl/run_simulation.py \
-  --csv anemia_diagnosed_cbc_data_v4.csv --labs 4 --rounds 5 --mode non_iid
-```
-This partitions the data into 4 labs, trains them in-process, and prints the
-global model's weighted macro-F1 per round.
+- `prepare_training_split.py`: excludes Module 3 validation/test rows.
+- `partition.py`: creates IID or non-IID lab shards.
+- `task.py`: shared model, preprocessing and metrics.
+- `lims_wrapper.py`: mock local LIMS reader and unit normalization.
+- `client.py`: Flower lab client.
+- `strategy.py`: explicit example-weighted FedAvg.
+- `server.py`: standalone server with optional TLS.
+- `run_simulation.py`: in-process Flower/Ray simulation.
+- `fl_artifacts.py`: saves and reload-checks the final ANN.
+- `gen_certs.sh`: creates demo TLS files.
+- `Dockerfile` and `Dockerfile.client`: server and client images.
 
-## Run it — real client/server processes (what Docker Compose uses in Module 9)
-```bash
-# 1. Partition into shard files
-python fl/common/partition.py --csv anemia_diagnosed_cbc_data_v4.csv \
-  --out fl/client/data --labs 4 --mode non_iid
-# 2. (optional) TLS certs
-bash fl/scripts/gen_certs.sh
-# 3. Start the server
-FL_LABS=4 FL_ROUNDS=5 python fl/server/server.py
-# 4. Start each lab (new terminal each), e.g. lab 0:
-LAB_ID=lab-00 SHARD_CSV=fl/client/data/lab_00.csv python fl/client/client.py
-```
+There are no Module 4 notebooks or notebook generator.
 
-## Privacy model — where this module stands
-- **Raw data never leaves the lab.** The mock LIMS reads the shard, normalizes,
-  trains locally; only ANN weights + an example count are returned. ✔ (holds now)
-- **Server never sees plaintext weights.** ✘ **not yet** — this module does
-  plaintext FedAvg. Module 5 (Paillier) makes the server blind; `strategy.py`
-  already marks the two "PAILLIER HOOK" points where encrypted aggregation slots
-  in. This is expected: Module 4 builds the FL scaffolding, Module 5 adds the
-  crypto.
+## Correct execution order
 
-## Module 5 — Paillier encryption (the server becomes blind)
-The encrypted variant lives alongside the plaintext baseline so you can demo both:
+Run commands from the repository root. Module 3's `preprocessor.joblib` is required.
+Every model output path must be new because Module 4 refuses to overwrite evidence.
 
-```bash
-pip install phe            # already in fl/requirements.txt
-# one-command encrypted federation (server never decrypts):
-python fl/run_simulation_paillier.py --csv anemia_diagnosed_cbc_data_v4.csv \
-    --labs 3 --rounds 3 --bits 1024
-```
-For the real client/server split, generate keys first — the **private key goes to
-labs only, never the server**:
-```bash
-python fl/keygen.py --out fl/keys --bits 2048    # writes public.json + private.json
-```
+1. Install: `python -m pip install -r "Module 4 FL/requirements.txt"`
+2. Prepare only Module 3 training rows:
+   `python "Module 4 FL/prepare_training_split.py" --csv anemia_diagnosed_cbc_data_v4.csv --out module4_training.csv`
+3. Run a simulation:
+   `python "Module 4 FL/run_simulation.py" --csv module4_training.csv --labs 3 --rounds 2 --mode non_iid --local-epochs 1 --shard-dir module4_shards --preprocessor /path/preprocessor.joblib --output-dir /new/path/federated_ann`
 
-How it stays blind: labs encrypt weight updates with the **public** key; the
-server computes `E(Σ nᵢ·wᵢ)` with homomorphic add + scalar-multiply (public-key
-ops) and **never decrypts or divides**; the labs (holding the **private** key)
-decrypt and divide by `N`. Verified: this reproduces plaintext FedAvg to ~1e-7.
+The seed-42 split has 896 training, 128 validation and 257 test rows.
+The simulation uses Ray clients on one computer; it is not a multi-machine deployment.
 
-Files: `ml/fedhealth_ml/paillier_utils.py` (crypto core), `fl/common/crypto.py`
-(Parameters bridge), `fl/server/strategy_paillier.py` (blind aggregator),
-`fl/client/client_paillier.py` (decrypt→train→encrypt), `fl/keygen.py`.
+## Separate processes and TLS
 
-## Decisions / simplifications (for defense)
-- **Shared preprocessor as an agreed normalization standard.** All labs use one
-  preprocessor (from Module 3) so feature vectors are comparable — it holds only
-  summary statistics, not patient data, so raw data still never leaves. Fully
-  federated normalization is a future enhancement.
-- **Paillier key custody & threshold.** Labs share one keypair; the server holds
-  only the public key. A production system would use *threshold* Paillier so no
-  single lab holds the full private key either — documented next step, out of FYP
-  scope.
-- **Key size 1024 for the demo, 2048+ for security.** Paillier encrypts every
-  weight (~3.3k per round for this ANN), so 2048-bit is slow; the size is a CLI
-  flag with the trade-off noted.
-- **TLS, not full mTLS.** Flower's classic API gives server-authenticated TLS
-  (clients verify the server via the CA). True mutual TLS (server verifying each
-  lab's client certificate) isn't exposed simply there; labs instead present an
-  `fl_client_id`. Client-cert mTLS is a deployment hardening step — flagged
-  because the scope says "mTLS".
-- **Flower pinned to `>=1.8,<1.13`** for the stable classic API used here.
-- **Only the ANN federates; XGBoost is local** (per the Module 3 architecture).
+Create shards with `partition.py`, then run `bash "Module 4 FL/gen_certs.sh"`.
+Start `server.py` with `--labs`, `--rounds`, `--local-epochs`, `--preprocessor`,
+`--output-dir`, `--ca-cert`, `--server-cert`, and `--server-key`.
+Start one `client.py` per lab with its own `--lab-id`, `--shard`, shared
+`--preprocessor`, server address and `--ca-cert`.
+
+The server controls local epochs, waits for every configured lab, and rejects
+failed or duplicate updates. TLS is server-authenticated, not client-certificate mTLS.
+
+## Docker
+
+Build from the repository root:
+
+- `docker build -f "Module 4 FL/Dockerfile" -t fedhealth-fl-server .`
+- `docker build -f "Module 4 FL/Dockerfile.client" -t fedhealth-fl-client .`
+
+The server image expects `/artifacts/preprocessor.joblib` and writable `/output`.
+The client expects the preprocessor and a shard such as `/data/lab_00.csv`.
+Docker Compose wiring is handled separately in Module 9.
+
+## Privacy boundary
+
+Raw CBC rows stay inside each client process. Module 4 sends plaintext ANN parameters,
+example counts, lab IDs and metrics, so its server is not blind.
+Module 5 is the encrypted variant. The shared preprocessor contains summary
+statistics and feature order, not raw patient rows.
+
+## Tested compatibility
+
+Validated with Python 3.13, Flower 1.24.0, Ray 2.51.1 and TensorFlow 2.20.0.
+Flower's classic APIs are deprecated, so versions must be revalidated before upgrade.
+Testing covered three clients, two non-IID rounds, FedAvg, normalization, TLS,
+checkpoint save/reload, checksums and the 257-row held-out test.
+This is software validation, not clinical validation or a final performance claim.

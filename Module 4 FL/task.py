@@ -18,9 +18,6 @@ import numpy as np
 import pandas as pd
 
 # --- make fedhealth_ml importable (repo layout: fl/common -> ../../ml) -------
-_ML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml"))
-if _ML not in sys.path:
-    sys.path.insert(0, _ML)
 from fedhealth_ml import schema, preprocess as pp  # noqa: E402
 
 # Model A ("cbc_multiclass") is what we federate in this module.
@@ -46,28 +43,54 @@ def load_or_fit_preprocessor(reference_csv, cache_path):
 
 
 # --- Per-lab data ------------------------------------------------------------
-def load_partition_data(shard_csv, preprocessor, test_frac=0.2, seed=42):
-    """Load one lab's shard -> scaled/encoded (X_train, y_train, X_test, y_test).
-    Pure pandas/sklearn (no TensorFlow), so it can be unit-tested independently."""
-    df = pd.read_csv(shard_csv)
+def prepare_partition_records(df):
+    """Normalize and clean raw local CBC records before splitting."""
+    if "Diagnosis" not in df.columns:
+        raise ValueError("Local shard must contain a Diagnosis column.")
+
+    df = df.copy()
+    feature_columns = [name for name in FEATURES if name in df.columns]
+    if feature_columns:
+        normalized = [
+            pp.normalize_units(row, feature_columns)
+            for row in df[feature_columns].to_dict("records")
+        ]
+        df.loc[:, feature_columns] = pd.DataFrame(
+            normalized, index=df.index
+        )[feature_columns]
+
     X = pp.clean_ranges(df, FEATURES)
     y = df["Diagnosis"].map(schema.ANEMIA_LABEL_MAP)
+    if y.isna().any():
+        unknown = sorted(df.loc[y.isna(), "Diagnosis"].astype(str).unique())
+        raise ValueError(f"Unmapped Diagnosis values in local shard: {unknown}")
+    return X, y
 
-    # Local, stratified holdout so each lab can evaluate the global model.
+
+def split_partition_data(X, y, preprocessor, test_frac=0.2, seed=42):
+    """Create a local holdout, then transform features and encode labels."""
     from sklearn.model_selection import train_test_split
-    # Guard: tiny/degenerate classes can't be stratified — fall back gracefully.
+
     try:
         Xtr, Xte, ytr, yte = train_test_split(
-            X, y, test_size=test_frac, stratify=y, random_state=seed)
+            X, y, test_size=test_frac, stratify=y, random_state=seed
+        )
     except ValueError:
         Xtr, Xte, ytr, yte = train_test_split(
-            X, y, test_size=test_frac, random_state=seed)
+            X, y, test_size=test_frac, random_state=seed
+        )
 
     Xtr = preprocessor.transform(Xtr)
     Xte = preprocessor.transform(Xte)
     ytr = pp.encode_labels(ytr, CLASSES)
     yte = pp.encode_labels(yte, CLASSES)
     return Xtr, ytr, Xte, yte
+
+
+def load_partition_data(shard_csv, preprocessor, test_frac=0.2, seed=42):
+    """Load, normalize, clean, split and transform one local lab shard."""
+    X, y = prepare_partition_records(pd.read_csv(shard_csv))
+    return split_partition_data(X, y, preprocessor, test_frac, seed)
 
 
 # --- Model (TensorFlow) ------------------------------------------------------

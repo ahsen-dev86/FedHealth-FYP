@@ -13,8 +13,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import task           # noqa: E402
-from common import partition      # noqa: E402
+import task           # noqa: E402
+import partition      # noqa: E402
 
 
 def main():
@@ -27,7 +27,19 @@ def main():
     ap.add_argument("--local-epochs", type=int, default=2)
     ap.add_argument("--shard-dir", default="./fl/client/data")
     ap.add_argument("--preprocessor", default="./fl/preprocessor.joblib")
+    ap.add_argument(
+        "--output-dir", required=True,
+        help="new directory for the final ANN, preprocessor and run metadata")
     args = ap.parse_args()
+
+    from pathlib import Path
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    if output_dir.exists():
+        ap.error("--output-dir must not already exist")
+    if args.labs < 2 or args.rounds < 1 or args.local_epochs < 1:
+        ap.error("Use at least 2 labs, 1 round and 1 local epoch")
+    if not Path(args.preprocessor).is_file():
+        ap.error("Provide an existing saved preprocessor; automatic fitting is disabled here")
 
     import flwr as fl
 
@@ -47,13 +59,13 @@ def main():
         if cid is None:
             cid = int(getattr(context, "cid", 0)) if hasattr(context, "cid") else 0
         cid = int(cid)
-        from client.client import LabClient, _as_flower_client
+        from client import LabClient, _as_flower_client
         lab = LabClient(f"lab-{cid:02d}", shard_paths[cid], prep,
                         local_epochs=args.local_epochs)
         return _as_flower_client(lab)
 
     # 4. Strategy: initialize the global model from a fresh ANN.
-    from server.strategy import FedHealthStrategy, weighted_metric_average
+    from strategy import FedHealthStrategy, weighted_metric_average
     initial = task.get_weights(task.get_model())
     strategy = FedHealthStrategy(
         fraction_fit=1.0, fraction_evaluate=1.0,
@@ -72,6 +84,48 @@ def main():
         strategy=strategy,
         client_resources={"num_cpus": 1, "num_gpus": 0},
     )
+
+    # Refuse to save a partial run as a completed federation.
+    expected_rounds = list(range(1, args.rounds + 1))
+    expected_ids = ",".join(f"lab-{i:02d}" for i in range(args.labs))
+
+    for key, expected_value in (
+        ("clients", args.labs),
+        ("lab_ids", expected_ids),
+    ):
+        expected_history = [(r, expected_value) for r in expected_rounds]
+        if hist.metrics_distributed_fit.get(key) != expected_history:
+            raise RuntimeError(f"Incomplete or inconsistent training history: {key}")
+
+    if [r for r, _ in hist.losses_distributed] != expected_rounds:
+        raise RuntimeError("Evaluation did not complete for every round")
+    if getattr(strategy, "last_aggregated_round", None) != args.rounds:
+        raise RuntimeError("Final aggregated parameters are missing")
+
+    from fl_artifacts import save_ann_checkpoint
+    final_model = task.get_model()
+    task.set_weights(
+        final_model,
+        task.parameters_to_ndarrays(strategy.last_aggregated_parameters),
+    )
+    checkpoint = save_ann_checkpoint(
+        final_model, prep, output_dir,
+        run_info={
+            "purpose": "federated_training",
+            "trained": True,
+            "initialization": "fresh_ann",
+            "labs": args.labs,
+            "rounds": args.rounds,
+            "local_epochs": args.local_epochs,
+            "partition_mode": args.mode,
+            "history": {
+                "losses_distributed": hist.losses_distributed,
+                "metrics_distributed": hist.metrics_distributed,
+                "metrics_distributed_fit": hist.metrics_distributed_fit,
+            },
+        },
+    )
+    print("Saved and reload-verified ANN checkpoint:", checkpoint)
 
     print("\n=== Federated training complete ===")
     for rnd, metrics in hist.metrics_distributed.get("macro_f1", []):
