@@ -19,9 +19,9 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from common import task  # noqa: E402
-from client.lims_wrapper import MockLIMS  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import task  # noqa: E402
+from lims_wrapper import MockLIMS  # noqa: E402
 
 
 class LabClient:
@@ -35,8 +35,9 @@ class LabClient:
         # Pull data through the (mock) LIMS, then normalize + split locally.
         lims = MockLIMS(shard_csv, lab_id=lab_id)
         print(f"[{lab_id}] LIMS summary:", lims.summary())
-        self.Xtr, self.ytr, self.Xte, self.yte = task.load_partition_data(
-            shard_csv, preprocessor)
+        X, y = lims.normalize(lims.fetch_records())
+        self.Xtr, self.ytr, self.Xte, self.yte = task.split_partition_data(
+            X, y, preprocessor)
 
         # Build the (architecturally identical) ANN and cache class weights.
         from fedhealth_ml import models
@@ -102,6 +103,12 @@ if __name__ == "__main__":
     ap.add_argument("--local-epochs", type=int, default=int(os.environ.get("LOCAL_EPOCHS", "2")))
     ap.add_argument("--ca-cert", default=os.environ.get("FL_CA_CERT"))  # enable TLS if set
     args = ap.parse_args()
+
+    if not os.path.isfile(args.preprocessor):
+        ap.error(
+            "Provide the existing shared Module 3 preprocessor; "
+            "automatic fitting is disabled for FL clients"
+        )
 
     import flwr as fl
 

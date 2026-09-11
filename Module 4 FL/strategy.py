@@ -37,6 +37,12 @@ class FedHealthStrategy(fl.server.strategy.FedAvg):
         if failures and not self.accept_failures:
             return None, {}
 
+        lab_ids = [res.metrics.get("lab_id") for _, res in results]
+        if not all(isinstance(name, str) and name for name in lab_ids):
+            raise ValueError("Every update must identify its lab.")
+        if len(set(lab_ids)) != len(lab_ids):
+            raise ValueError("Duplicate lab identities in one training round.")
+
         # Each result -> (list_of_layer_ndarrays, num_examples).
         client_updates = [
             (parameters_to_ndarrays(fit_res.parameters), fit_res.num_examples)
@@ -64,8 +70,11 @@ class FedHealthStrategy(fl.server.strategy.FedAvg):
         aggregated = [s / total_examples for s in scaled_sums]
 
         parameters = ndarrays_to_parameters(aggregated)
+        self.last_aggregated_parameters = parameters
+        self.last_aggregated_round = server_round
         metrics = {"round": server_round, "clients": len(results),
                    "total_examples": total_examples}
+        metrics["lab_ids"] = ",".join(sorted(lab_ids))
         print(f"[server] round {server_round}: aggregated {len(results)} labs "
               f"({total_examples} examples)")
         return parameters, metrics

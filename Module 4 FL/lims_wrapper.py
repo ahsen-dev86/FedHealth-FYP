@@ -18,10 +18,8 @@ import sys
 
 import pandas as pd
 
-_ML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml"))
-if _ML not in sys.path:
-    sys.path.insert(0, _ML)
 from fedhealth_ml import schema, preprocess as pp  # noqa: E402
+from task import prepare_partition_records  # noqa: E402
 
 
 class MockLIMS:
@@ -43,20 +41,8 @@ class MockLIMS:
     # --- normalization (shared with every tier via fedhealth_ml) ------------
     @staticmethod
     def normalize(df):
-        """Rescale real-world report units to the model's scale, then apply
-        physiological range-cleaning to the canonical CBC features. Uses the
-        SAME shared normalizer as the OCR path and the inference service, so a
-        real lab's /mm³-scale WBC/platelet/absolute counts are handled
-        consistently everywhere. Returns (X_raw_canonical, y_keys)."""
-        df = df.copy()
-        feats = [c for c in schema.MODEL_A_FEATURES if c in df.columns]
-        if feats:
-            # Row-by-row unit normalization (a no-op for already-canonical data).
-            normed = [pp.normalize_units(r, feats) for r in df[feats].to_dict("records")]
-            df[feats] = pd.DataFrame(normed, index=df.index)[feats]
-        X = pp.clean_ranges(df, schema.MODEL_A_FEATURES)
-        y = df["Diagnosis"].map(schema.ANEMIA_LABEL_MAP) if "Diagnosis" in df else None
-        return X, y
+        """Prepare local raw records with the shared FL training pipeline."""
+        return prepare_partition_records(df)
 
     def summary(self):
         """Lightweight, privacy-safe description of the local silo (row/feature

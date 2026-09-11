@@ -19,9 +19,6 @@ import numpy as np
 import pandas as pd
 
 # Make the shared fedhealth_ml package importable (repo layout: ../../ml).
-_ML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml"))
-if _ML not in sys.path:
-    sys.path.insert(0, _ML)
 from fedhealth_ml import schema  # noqa: E402
 
 

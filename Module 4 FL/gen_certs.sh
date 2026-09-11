@@ -11,7 +11,8 @@
 #   bash fl/scripts/gen_certs.sh        # writes into fl/certs/
 # ---------------------------------------------------------------------------
 set -euo pipefail
-CERT_DIR="$(cd "$(dirname "$0")/.." && pwd)/certs"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CERT_DIR="${CERT_DIR:-$SCRIPT_DIR/certs}"
 mkdir -p "$CERT_DIR"
 cd "$CERT_DIR"
 

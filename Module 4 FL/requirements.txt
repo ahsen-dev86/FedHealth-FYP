@@ -1,8 +1,10 @@
-# fl/requirements.txt
-# Pinned to a Flower range where the classic start_server/start_client/
-# start_simulation API used here is stable. If you upgrade past this, migrate to
-# the ServerApp/ClientApp + run_simulation API.
-flwr[simulation]>=1.8,<1.13
+# Module 4 federated-learning dependencies
+# Flower/Ray versions exercised in the Python 3.13 Colab environment.
+# The classic start_simulation API is deprecated but works in this pin.
+# Revalidate the client/server and simulation APIs before upgrading.
+flwr[simulation]==1.24.0
+ray==2.51.1
+grpcio-health-checking==1.71.2
 tensorflow>=2.15
 xgboost>=2.0
 scikit-learn>=1.3
