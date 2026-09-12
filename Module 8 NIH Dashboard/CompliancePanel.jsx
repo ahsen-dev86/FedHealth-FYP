@@ -1,4 +1,4 @@
-// frontend/src/nih/CompliancePanel.jsx
+// frontend/src/surveillance/CompliancePanel.jsx
 // Regulatory oversight (PDPB 2023). Verifies the immutable audit log's hash
 // chain and shows the most recent entries. The "verified" badge is backed by the
 // backend recomputing the whole SHA-256 chain (GET /audit/verify).

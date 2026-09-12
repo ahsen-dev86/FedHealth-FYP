@@ -1,0 +1,145 @@
+/* frontend/src/styles.css
+   ------------------------------------------------------------------
+   FedHealth design system — "clinical instrument".
+   Tokens first, then components. Selectors are element- or block-scoped
+   (.fh-*) to avoid specificity clashes between sections.
+   ------------------------------------------------------------------ */
+
+:root {
+  /* Palette — calm clinical teal; red is SEMANTIC (risk only), never decor. */
+  --ink:        #12211F;   /* primary text (green-tinted near-black) */
+  --ink-soft:   #5A6B68;   /* secondary text */
+  --teal:       #0F3A3E;   /* brand ink / headers */
+  --action:     #0E7C7B;   /* primary actions */
+  --action-600: #0A5F5E;
+  --bg:         #F6F8F7;   /* app background (cool paper) */
+  --card:       #FFFFFF;
+  --line:       #DCE4E2;   /* hairlines */
+  --line-soft:  #EAF0EE;
+  --risk:       #B4453C;   /* high-risk flags ONLY */
+  --risk-bg:    #FBEEEC;
+  --warn:       #B7791F;   /* rule-flag / caution */
+  --warn-bg:    #FBF3E4;
+  --ok:         #2F855A;
+
+  /* Confidence scale (low -> high), used for the readout bars */
+  --c-1: #CBE3E0; --c-2: #8FCFC7; --c-3: #4FB0A6; --c-4: #0E7C7B; --c-5: #0A5F5E;
+
+  --font-ui:   'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --shadow: 0 1px 2px rgba(18,33,31,.04), 0 8px 24px rgba(18,33,31,.06);
+  --shadow-sm: 0 1px 2px rgba(18,33,31,.06);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every clinical value + confidence % is monospace — the instrument signature. */
+.fh-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+h1,h2,h3 { color: var(--teal); font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+a { color: var(--action); }
+
+/* ---- Buttons ---- */
+.fh-btn {
+  font: inherit; font-weight: 600; cursor: pointer;
+  border-radius: var(--radius-sm); border: 1px solid transparent;
+  padding: 10px 16px; transition: background .15s, border-color .15s, opacity .15s;
+}
+.fh-btn--primary { background: var(--action); color: #fff; }
+.fh-btn--primary:hover { background: var(--action-600); }
+.fh-btn--ghost { background: transparent; color: var(--action); border-color: var(--line); }
+.fh-btn--ghost:hover { background: var(--line-soft); }
+.fh-btn:disabled { opacity: .5; cursor: not-allowed; }
+.fh-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+
+/* ---- Inputs ---- */
+.fh-input, .fh-textarea, .fh-select {
+  font: inherit; width: 100%; color: var(--ink);
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 9px 11px;
+}
+.fh-input:focus, .fh-textarea:focus, .fh-select:focus {
+  outline: 2px solid var(--action); outline-offset: -1px; border-color: var(--action);
+}
+.fh-label { display: block; font-size: 13px; font-weight: 500; color: var(--ink-soft); margin-bottom: 5px; }
+.fh-field { margin-bottom: 14px; }
+
+/* ---- Cards / layout ---- */
+.fh-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.fh-card__head { padding: 14px 18px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; }
+.fh-card__body { padding: 18px; }
+.fh-eyebrow { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--action); font-weight: 600; }
+
+.fh-app { min-height: 100%; display: flex; flex-direction: column; }
+.fh-main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 24px; }
+.fh-grid-2 { display: grid; grid-template-columns: 1fr 1.05fr; gap: 22px; align-items: start; }
+@media (max-width: 900px) { .fh-grid-2 { grid-template-columns: 1fr; } }
+
+/* ---- Top bar ---- */
+.fh-topbar { background: var(--teal); color: #EAF3F1; }
+.fh-topbar__inner { max-width: 1180px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+.fh-brand { font-weight: 700; letter-spacing: -0.02em; color: #fff; font-size: 18px; }
+.fh-brand span { color: #6FD1C7; }
+.fh-topbar__spacer { flex: 1; }
+.fh-topbar nav a { color: #BFE0DB; text-decoration: none; font-weight: 500; padding: 6px 10px; border-radius: 6px; }
+.fh-topbar nav a.active, .fh-topbar nav a:hover { background: rgba(255,255,255,.10); color: #fff; }
+.fh-userchip { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #CDE7E3; }
+.fh-userchip .role { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; background: rgba(255,255,255,.12); padding: 2px 7px; border-radius: 999px; }
+
+/* ---- CBC readout grid ---- */
+.fh-cbc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.fh-cbc-cell label { display: block; font-size: 11px; color: var(--ink-soft); margin-bottom: 3px; }
+.fh-cbc-cell input { font-family: var(--font-mono); font-size: 14px; padding: 7px 8px; text-align: right; }
+
+/* ---- Confidence readout (signature element) ---- */
+.fh-conf { display: flex; flex-direction: column; gap: 10px; }
+.fh-conf__row { display: grid; grid-template-columns: 190px 1fr 56px; align-items: center; gap: 12px; }
+.fh-conf__name { font-size: 13px; color: var(--ink); }
+.fh-conf__track { height: 10px; background: var(--line-soft); border-radius: 999px; overflow: hidden; }
+.fh-conf__fill { height: 100%; border-radius: 999px; transition: width .5s ease; }
+.fh-conf__pct { text-align: right; font-size: 13px; color: var(--ink); }
+@media (max-width: 560px) { .fh-conf__row { grid-template-columns: 130px 1fr 48px; } }
+
+/* ---- Flags / banners ---- */
+.fh-flag { border-radius: var(--radius-sm); padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; }
+.fh-flag--warn { background: var(--warn-bg); border: 1px solid #ECD9AE; }
+.fh-flag--risk { background: var(--risk-bg); border: 1px solid #EEC9C3; }
+.fh-flag--ok   { background: #EAF6EF; border: 1px solid #C4E6D2; }
+.fh-flag__title { font-weight: 600; font-size: 14px; }
+.fh-flag__title--risk { color: var(--risk); }
+.fh-flag__title--warn { color: var(--warn); }
+.fh-flag__body { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+
+.fh-pill { font-size: 12px; padding: 2px 9px; border-radius: 999px; font-weight: 600; }
+.fh-pill--risk { background: var(--risk-bg); color: var(--risk); }
+.fh-pill--ok { background: #EAF6EF; color: var(--ok); }
+.fh-pill--muted { background: var(--line-soft); color: var(--ink-soft); }
+
+/* ---- Auth pages ---- */
+.fh-auth { min-height: 100%; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(1200px 600px at 50% -10%, #E8F1EF 0%, var(--bg) 60%); }
+.fh-auth__card { width: 100%; max-width: 400px; }
+.fh-auth__brand { text-align: center; margin-bottom: 20px; }
+.fh-auth__brand .fh-brand { color: var(--teal); font-size: 26px; }
+.fh-auth__brand p { color: var(--ink-soft); font-size: 13px; margin: 6px 0 0; }
+.fh-qr { display: block; margin: 8px auto; width: 190px; height: 190px; border: 1px solid var(--line); border-radius: 8px; }
+.fh-key { font-family: var(--font-mono); font-size: 13px; text-align: center; background: var(--line-soft); padding: 8px; border-radius: 6px; word-break: break-all; }
+
+.fh-error { color: var(--risk); font-size: 13px; background: var(--risk-bg); border: 1px solid #EEC9C3; padding: 9px 11px; border-radius: 7px; }
+.fh-muted { color: var(--ink-soft); font-size: 13px; }
+.fh-hr { border: none; border-top: 1px solid var(--line-soft); margin: 16px 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

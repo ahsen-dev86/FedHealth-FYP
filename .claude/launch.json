@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "frontend-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/Ahsan/AppData/Local/Temp/claude/C--Users-Ahsan-Desktop-FedHealth-FYP/50b9385e-f0b5-4d74-9c0a-3c45df1e4dd8/scratchpad/frontend-preview", "run", "dev"],
+      "port": 5175
+    }
+  ]
+}

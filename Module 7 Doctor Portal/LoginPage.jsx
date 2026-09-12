@@ -78,7 +78,7 @@ export default function LoginPage() {
                   <select className="fh-select" value={form.role} onChange={set('role')}>
                     <option value="doctor">Doctor</option>
                     <option value="lab_tech">Lab technician</option>
-                    <option value="nih_official">NIH official (gov email required)</option>
+                    <option value="nih_official">Health official (gov email required)</option>
                   </select>
                 </div>
                 <div className="fh-field">

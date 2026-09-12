@@ -1,14 +1,14 @@
 // frontend/src/App.jsx
 // Routing + auth guard. Public: /login, /mfa. Everything else requires a session
 // and renders inside the Layout shell. The index route sends each user to their
-// role's home (doctor -> /doctor; NIH -> /nih, added in Module 8).
+// role's home (doctor -> /doctor; surveillance -> /surveillance, added in Module 8).
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
 import MfaPage from './auth/MfaPage';
 import Layout from './components/Layout';
 import DoctorPortal from './doctor/DoctorPortal';
-import NihDashboard from './nih/NihDashboard';
+import SurveillanceDashboard from './surveillance/SurveillanceDashboard';
 import './styles.css';
 
 // Wrap a page: require a session, then render it inside the shell.
@@ -28,7 +28,7 @@ function RoleHome() {
   if (loading) return <div className="fh-auth"><p className="fh-muted">Loading…</p></div>;
   if (!isAuthed) return <Navigate to="/login" replace />;
   if (can('prediction:create')) return <Navigate to="/doctor" replace />;
-  if (can('nih:dashboard')) return <Navigate to="/nih" replace />;
+  if (can('nih:dashboard')) return <Navigate to="/surveillance" replace />;
   return <Navigate to="/doctor" replace />;
 }
 
@@ -52,7 +52,7 @@ export default function App() {
           <Route path="/mfa" element={<MfaPage />} />
           <Route path="/" element={<RoleHome />} />
           <Route path="/doctor" element={<Protected><DoctorPortal /></Protected>} />
-          <Route path="/nih" element={<Protected><NihDashboard /></Protected>} />
+          <Route path="/surveillance" element={<Protected><SurveillanceDashboard /></Protected>} />
           <Route path="*" element={<Protected><NotFound /></Protected>} />
         </Routes>
       </BrowserRouter>

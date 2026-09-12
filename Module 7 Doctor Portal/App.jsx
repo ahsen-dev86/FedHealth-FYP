@@ -1,7 +1,7 @@
 // frontend/src/App.jsx
 // Routing + auth guard. Public: /login, /mfa. Everything else requires a session
 // and renders inside the Layout shell. The index route sends each user to their
-// role's home (doctor -> /doctor; NIH -> /nih, added in Module 8).
+// role's home (doctor -> /doctor; surveillance -> /surveillance, added in Module 8).
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
@@ -51,7 +51,7 @@ export default function App() {
           <Route path="/mfa" element={<MfaPage />} />
           <Route path="/" element={<RoleHome />} />
           <Route path="/doctor" element={<Protected><DoctorPortal /></Protected>} />
-          {/* /nih is added in Module 8 (NIH Dashboard). */}
+          {/* /surveillance is added in Module 8 (Surveillance Dashboard). */}
           <Route path="*" element={<Protected><NotFound /></Protected>} />
         </Routes>
       </BrowserRouter>

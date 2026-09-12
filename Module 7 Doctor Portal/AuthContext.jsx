@@ -40,6 +40,11 @@ export function AuthProvider({ children }) {
 
   const saveToken = useCallback((t) => {
     localStorage.setItem(TOKEN_KEY, t);
+    // Set loading in the same update as the token so the route guard sees
+    // "still resolving" instead of a one-render window where the token is
+    // set but /auth/me hasn't returned yet (isAuthed false -> redirects to
+    // /login right after a successful MFA verify).
+    setLoading(true);
     setToken(t);
   }, []);
 

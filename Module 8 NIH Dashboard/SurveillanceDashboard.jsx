@@ -1,10 +1,10 @@
-// frontend/src/nih/NihDashboard.jsx
+// frontend/src/surveillance/SurveillanceDashboard.jsx
 // National surveillance workspace (scope Module 6.5). Three views:
 //   * Surveillance — geospatial clusters (map) + filters + summary stats
 //   * Alerts       — the predictive-alert feed with acknowledgement
 //   * Compliance   — immutable audit-log oversight
-// Everything shown is aggregated + anonymized; the NIH role cannot reach
-// individual reports or predictions (enforced by backend RBAC).
+// Everything shown is aggregated + anonymized; the surveillance role cannot
+// reach individual reports or predictions (enforced by backend RBAC).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import ClusterMap from './ClusterMap';
@@ -22,7 +22,7 @@ const TABS = [
   ['compliance', 'Compliance'],
 ];
 
-export default function NihDashboard() {
+export default function SurveillanceDashboard() {
   const [tab, setTab] = useState('surveillance');
   const [clusters, setClusters] = useState(null);
   const [filters, setFilters] = useState({ province: '', condition: '' });
@@ -56,7 +56,7 @@ export default function NihDashboard() {
       <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div className="fh-eyebrow">National epidemiological intelligence</div>
-          <h1 style={{ fontSize: 24, marginTop: 4 }}>NIH Surveillance Dashboard</h1>
+          <h1 style={{ fontSize: 24, marginTop: 4 }}>Surveillance Dashboard</h1>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           {TABS.map(([id, label]) => (

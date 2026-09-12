@@ -1,4 +1,4 @@
-// frontend/src/nih/ClusterMap.jsx
+// frontend/src/surveillance/ClusterMap.jsx
 // Geospatial view of the anonymized, aggregated prediction clusters (scope
 // 6.5.1). Two modes over the same data:
 //   * markers — proportional circles per district (radius ∝ case_count, red if

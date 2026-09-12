@@ -1,8 +1,9 @@
 # FedHealth — Frontend (Module 7: Doctor Portal)
 
 A React (Vite) single-page app. Module 7 delivers the shared auth shell and the
-**Doctor Portal**; the **NIH Dashboard** (Module 8) slots into the same app under
-`/nih`. Role-based routing sends each user to their area, mirroring backend RBAC.
+**Doctor Portal**; the **Surveillance Dashboard** (Module 8) slots into the same
+app under `/surveillance`. Role-based routing sends each user to their area,
+mirroring backend RBAC.
 
 ## Design
 A "clinical instrument" identity: IBM Plex Sans for UI, **IBM Plex Mono for every
@@ -46,5 +47,5 @@ Have the backend (Module 2/6) and the inference service (Module 6) running.
   httpOnly cookie to reduce XSS exposure. Flagged.
 - **Symptoms are context, not model input** — shown to the doctor and stored on
   the report; the CBC model stays CBC-only.
-- Single app, **role-routed** (one build serves Doctor + NIH), rather than two
-  separate apps.
+- Single app, **role-routed** (one build serves Doctor + Surveillance), rather
+  than two separate apps.

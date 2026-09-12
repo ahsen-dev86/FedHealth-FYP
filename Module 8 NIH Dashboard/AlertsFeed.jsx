@@ -1,6 +1,6 @@
-// frontend/src/nih/AlertsFeed.jsx
+// frontend/src/surveillance/AlertsFeed.jsx
 // The predictive-alerting feed (scope 6.5.2): outbreak clusters + high-risk
-// cases raised by the backend. NIH officials can filter by status and
+// cases raised by the backend. Health officials can filter by status and
 // acknowledge alerts. All alert content is aggregate/anonymized.
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
