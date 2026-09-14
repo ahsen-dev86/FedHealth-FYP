@@ -1,0 +1,423 @@
+{
+  "info": {
+    "name": "FedHealth - Module 1+2 Auth Flow",
+    "description": "Full end-to-end test of the merged Module 1 (Database) + Module 2 (Authentication) backend. Run folders top to bottom, or use Collection Runner for the 'Core Flow' folder. Tokens and TOTP codes chain automatically via collection variables — you shouldn't need to copy/paste anything by hand.\n\nBefore running 'Admin Flow', bootstrap an admin from a terminal in the project folder:\nPowerShell:\n$env:ADMIN_EMAIL=\"admin@example.com\"; $env:ADMIN_PASSWORD=\"AdminPass123\"; $env:ADMIN_NAME=\"Admin\"; npm run bootstrap:admin",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "doctorPassword", "value": "SuperSecret123" },
+    { "key": "doctorEmail", "value": "" },
+    { "key": "doctorPreAuth", "value": "" },
+    { "key": "doctorMfaSecret", "value": "" },
+    { "key": "doctorTotpCode", "value": "" },
+    { "key": "doctorAccessToken", "value": "" },
+    { "key": "adminEmail", "value": "admin@example.com" },
+    { "key": "adminPassword", "value": "AdminPass123" },
+    { "key": "adminPreAuth", "value": "" },
+    { "key": "adminMfaSecret", "value": "" },
+    { "key": "adminTotpCode", "value": "" },
+    { "key": "adminAccessToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Health Check",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('server is up', () => pm.response.to.have.status(200));",
+          "pm.test('reports fedhealth-backend', () => pm.response.json().service === 'fedhealth-backend');"
+        ]}
+      }]
+    },
+    {
+      "name": "Core Flow (doctor)",
+      "item": [
+        {
+          "name": "1. Register doctor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"dr.postman.{{$timestamp}}@example.com\",\n  \"password\": \"{{doctorPassword}}\",\n  \"fullName\": \"Dr Postman\",\n  \"role\": \"doctor\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('returns mfaSetupRequired', () => body.mfaSetupRequired === true);",
+              "pm.collectionVariables.set('doctorPreAuth', body.preAuthToken);",
+              "const req = pm.request.body.raw;",
+              "pm.collectionVariables.set('doctorEmail', JSON.parse(req).email);"
+            ]}
+          }]
+        },
+        {
+          "name": "2. MFA setup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{doctorPreAuth}}" }],
+            "url": "{{baseUrl}}/auth/mfa/setup"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('returns a manualKey', () => typeof body.manualKey === 'string' && body.manualKey.length > 0);",
+              "pm.collectionVariables.set('doctorMfaSecret', body.manualKey);"
+            ]}
+          }]
+        },
+        {
+          "name": "3. MFA verify-setup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{doctorPreAuth}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/mfa/verify-setup",
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"{{doctorTotpCode}}\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "// Compute a fresh RFC 6238 TOTP code right before sending — codes expire every 30s,",
+                "// so this runs at request time rather than being precomputed earlier in the chain.",
+                "function base32toHex(base32) {",
+                "  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                "  let bits = '', hex = '';",
+                "  base32 = base32.replace(/=+$/, '');",
+                "  for (let i = 0; i < base32.length; i++) {",
+                "    const val = chars.indexOf(base32.charAt(i).toUpperCase());",
+                "    if (val === -1) continue;",
+                "    bits += val.toString(2).padStart(5, '0');",
+                "  }",
+                "  for (let i = 0; i + 4 <= bits.length; i += 4) {",
+                "    hex += parseInt(bits.substr(i, 4), 2).toString(16);",
+                "  }",
+                "  return hex;",
+                "}",
+                "function generateTOTP(base32Secret) {",
+                "  const epoch = Math.floor(Date.now() / 1000);",
+                "  const timeHex = Math.floor(epoch / 30).toString(16).padStart(16, '0');",
+                "  const keyHex = base32toHex(base32Secret);",
+                "  const hmac = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(timeHex), CryptoJS.enc.Hex.parse(keyHex));",
+                "  const hmacHex = hmac.toString(CryptoJS.enc.Hex);",
+                "  const offset = parseInt(hmacHex.substring(hmacHex.length - 1), 16);",
+                "  let otp = ((parseInt(hmacHex.substr(offset * 2, 8), 16) & 0x7fffffff) + '');",
+                "  otp = otp.substr(otp.length - 6, 6).padStart(6, '0');",
+                "  return otp;",
+                "}",
+                "const secret = pm.collectionVariables.get('doctorMfaSecret');",
+                "pm.collectionVariables.set('doctorTotpCode', generateTOTP(secret));"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('200 OK, activated', () => {",
+                "  pm.response.to.have.status(200);",
+                "  pm.expect(pm.response.json().activated).to.eql(true);",
+                "});",
+                "pm.collectionVariables.set('doctorAccessToken', pm.response.json().accessToken);"
+              ]}
+            }
+          ]
+        },
+        {
+          "name": "4. Get my profile (/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{doctorAccessToken}}" }],
+            "url": "{{baseUrl}}/auth/me"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('role is doctor', () => body.role === 'doctor');",
+              "pm.test('has prediction:confirm permission', () => body.permissions.includes('prediction:confirm'));",
+              "pm.test('does NOT have audit:read permission', () => !body.permissions.includes('audit:read'));"
+            ]}
+          }]
+        },
+        {
+          "name": "5. RBAC: doctor hits /audit -> expect 403",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{doctorAccessToken}}" }],
+            "url": "{{baseUrl}}/audit"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('403 Forbidden (RBAC correctly blocks this)', () => pm.response.to.have.status(403));"
+            ]}
+          }]
+        },
+        {
+          "name": "6. Log out and log back in",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{doctorEmail}}\",\n  \"password\": \"{{doctorPassword}}\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK, mfaRequired', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().mfaRequired).to.eql(true);",
+              "});",
+              "pm.collectionVariables.set('doctorPreAuth', pm.response.json().preAuthToken);"
+            ]}
+          }]
+        },
+        {
+          "name": "7. MFA verify (login)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{doctorPreAuth}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/mfa/verify",
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"{{doctorTotpCode}}\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "function base32toHex(base32) {",
+                "  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                "  let bits = '', hex = '';",
+                "  base32 = base32.replace(/=+$/, '');",
+                "  for (let i = 0; i < base32.length; i++) {",
+                "    const val = chars.indexOf(base32.charAt(i).toUpperCase());",
+                "    if (val === -1) continue;",
+                "    bits += val.toString(2).padStart(5, '0');",
+                "  }",
+                "  for (let i = 0; i + 4 <= bits.length; i += 4) {",
+                "    hex += parseInt(bits.substr(i, 4), 2).toString(16);",
+                "  }",
+                "  return hex;",
+                "}",
+                "function generateTOTP(base32Secret) {",
+                "  const epoch = Math.floor(Date.now() / 1000);",
+                "  const timeHex = Math.floor(epoch / 30).toString(16).padStart(16, '0');",
+                "  const keyHex = base32toHex(base32Secret);",
+                "  const hmac = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(timeHex), CryptoJS.enc.Hex.parse(keyHex));",
+                "  const hmacHex = hmac.toString(CryptoJS.enc.Hex);",
+                "  const offset = parseInt(hmacHex.substring(hmacHex.length - 1), 16);",
+                "  let otp = ((parseInt(hmacHex.substr(offset * 2, 8), 16) & 0x7fffffff) + '');",
+                "  otp = otp.substr(otp.length - 6, 6).padStart(6, '0');",
+                "  return otp;",
+                "}",
+                "const secret = pm.collectionVariables.get('doctorMfaSecret');",
+                "pm.collectionVariables.set('doctorTotpCode', generateTOTP(secret));"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('200 OK, real access token issued', () => {",
+                "  pm.response.to.have.status(200);",
+                "  pm.expect(pm.response.json().accessToken).to.be.a('string');",
+                "});",
+                "pm.collectionVariables.set('doctorAccessToken', pm.response.json().accessToken);"
+              ]}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Security Checks",
+      "item": [
+        {
+          "name": "Lockout: 5x wrong password (run this request 5 times)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{doctorEmail}}\",\n  \"password\": \"DefinitelyWrongPass1\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "// Hit Send 5 times in a row on this one request. Attempts 1-4 should be 401.",
+              "// The 5th (and any after) should flip to 423 (locked) — check the status code",
+              "// shown in Postman's response panel each time you click Send.",
+              "pm.test('401 or 423 (both are valid depending on attempt number)', () => {",
+              "  pm.expect([401, 423]).to.include(pm.response.code);",
+              "});"
+            ]}
+          }]
+        },
+        {
+          "name": "NIH register with bad domain -> expect 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"fake.{{$timestamp}}@gmail.com\",\n  \"password\": \"SuperSecret123\",\n  \"fullName\": \"Fake NIH\",\n  \"role\": \"nih_official\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('400 Bad Request (gov domain rejected)', () => pm.response.to.have.status(400));"
+            ]}
+          }]
+        },
+        {
+          "name": "NIH register with approved domain -> expect 201",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"real.{{$timestamp}}@nih.org.pk\",\n  \"password\": \"SuperSecret123\",\n  \"fullName\": \"Real NIH\",\n  \"role\": \"nih_official\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('201 Created (gov domain accepted)', () => pm.response.to.have.status(201));"
+            ]}
+          }]
+        }
+      ]
+    },
+    {
+      "name": "Admin Flow",
+      "description": "Run scripts/bootstrap-admin.js from a terminal FIRST (see collection description) with adminEmail/adminPassword matching the collection variables below, before running these requests.",
+      "item": [
+        {
+          "name": "1. Admin login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "if (body.mfaSetupRequired) { pm.collectionVariables.set('adminPreAuth', body.preAuthToken); }",
+              "if (body.mfaRequired) { pm.collectionVariables.set('adminPreAuth', body.preAuthToken); }"
+            ]}
+          }]
+        },
+        {
+          "name": "2. Admin MFA setup (only needed once, first login)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminPreAuth}}" }],
+            "url": "{{baseUrl}}/auth/mfa/setup"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('adminMfaSecret', pm.response.json().manualKey);",
+              "}"
+            ]}
+          }]
+        },
+        {
+          "name": "3. Admin MFA verify (setup or login - same endpoint pattern)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminPreAuth}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/mfa/verify-setup",
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"{{adminTotpCode}}\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "function base32toHex(base32) {",
+                "  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                "  let bits = '', hex = '';",
+                "  base32 = base32.replace(/=+$/, '');",
+                "  for (let i = 0; i < base32.length; i++) {",
+                "    const val = chars.indexOf(base32.charAt(i).toUpperCase());",
+                "    if (val === -1) continue;",
+                "    bits += val.toString(2).padStart(5, '0');",
+                "  }",
+                "  for (let i = 0; i + 4 <= bits.length; i += 4) {",
+                "    hex += parseInt(bits.substr(i, 4), 2).toString(16);",
+                "  }",
+                "  return hex;",
+                "}",
+                "function generateTOTP(base32Secret) {",
+                "  const epoch = Math.floor(Date.now() / 1000);",
+                "  const timeHex = Math.floor(epoch / 30).toString(16).padStart(16, '0');",
+                "  const keyHex = base32toHex(base32Secret);",
+                "  const hmac = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(timeHex), CryptoJS.enc.Hex.parse(keyHex));",
+                "  const hmacHex = hmac.toString(CryptoJS.enc.Hex);",
+                "  const offset = parseInt(hmacHex.substring(hmacHex.length - 1), 16);",
+                "  let otp = ((parseInt(hmacHex.substr(offset * 2, 8), 16) & 0x7fffffff) + '');",
+                "  otp = otp.substr(otp.length - 6, 6).padStart(6, '0');",
+                "  return otp;",
+                "}",
+                "const secret = pm.collectionVariables.get('adminMfaSecret');",
+                "if (secret) { pm.collectionVariables.set('adminTotpCode', generateTOTP(secret)); }"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "if (pm.response.code === 200) {",
+                "  const body = pm.response.json();",
+                "  pm.collectionVariables.set('adminAccessToken', body.accessToken);",
+                "}"
+              ]}
+            }
+          ]
+        },
+        {
+          "name": "4. View audit log",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": "{{baseUrl}}/audit"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('returns an array of entries', () => Array.isArray(pm.response.json()));"
+            ]}
+          }]
+        },
+        {
+          "name": "5. Verify audit chain integrity",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }],
+            "url": "{{baseUrl}}/audit/verify"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('chain is intact (ok:true, broken_at:null)', () => {",
+              "  pm.expect(body.ok).to.eql(true);",
+              "  pm.expect(body.broken_at).to.eql(null);",
+              "});"
+            ]}
+          }]
+        }
+      ]
+    }
+  ]
+}
