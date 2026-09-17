@@ -101,6 +101,52 @@ def get_model():
                             hidden=(64, 32), dropout=0.3)
 
 
+def load_initial_model(model_path):
+    """Load and validate the trained Module 3 Model A ANN.
+
+    The returned model uses Module 4's compiled architecture with the Module 3
+    weights applied. This keeps local training settings consistent while
+    refusing an artifact with incompatible dimensions or weight tensors.
+    """
+    import tensorflow as tf
+
+    loaded = tf.keras.models.load_model(model_path, compile=False)
+    expected = get_model()
+
+    if tuple(loaded.input_shape) != tuple(expected.input_shape):
+        raise ValueError(
+            "Initial ANN input shape does not match Model A: "
+            f"expected {expected.input_shape}, got {loaded.input_shape}"
+        )
+    if tuple(loaded.output_shape) != tuple(expected.output_shape):
+        raise ValueError(
+            "Initial ANN output shape does not match Model A: "
+            f"expected {expected.output_shape}, got {loaded.output_shape}"
+        )
+
+    loaded_weights = loaded.get_weights()
+    expected_weights = expected.get_weights()
+    if len(loaded_weights) != len(expected_weights):
+        raise ValueError(
+            "Initial ANN weight count does not match the Module 4 model"
+        )
+    for index, (source, target) in enumerate(
+        zip(loaded_weights, expected_weights)
+    ):
+        if source.shape != target.shape:
+            raise ValueError(
+                "Initial ANN weight shape mismatch at tensor "
+                f"{index}: expected {target.shape}, got {source.shape}"
+            )
+        if not np.isfinite(source).all():
+            raise ValueError(
+                f"Initial ANN contains non-finite values at tensor {index}"
+            )
+
+    expected.set_weights(loaded_weights)
+    return expected
+
+
 def get_weights(model):
     """ANN weights as a list of numpy arrays — the federated parameters."""
     return model.get_weights()

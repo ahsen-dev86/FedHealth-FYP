@@ -8,7 +8,7 @@ COPY ["Module 4 FL/", "/app/module4/"]
 WORKDIR /app/module4
 ENV PYTHONPATH=/app/module4
 ENV FL_BIND=0.0.0.0:8080 FL_ROUNDS=5 FL_LABS=3 LOCAL_EPOCHS=2
-ENV PREPROCESSOR=/artifacts/preprocessor.joblib
+ENV PREPROCESSOR=/artifacts/preprocessor.joblib INITIAL_MODEL=/artifacts/ann.keras
 VOLUME ["/artifacts", "/output"]
 EXPOSE 8080
 CMD ["python", "server.py", "--output-dir", "/output/federated_ann"]

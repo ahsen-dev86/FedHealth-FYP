@@ -9,6 +9,7 @@
 #                               --labs 4 --rounds 5 --mode non_iid
 # ---------------------------------------------------------------------------
 import argparse
+import hashlib
 import os
 import sys
 
@@ -28,6 +29,9 @@ def main():
     ap.add_argument("--shard-dir", default="./fl/client/data")
     ap.add_argument("--preprocessor", default="./fl/preprocessor.joblib")
     ap.add_argument(
+        "--initial-model", required=True,
+        help="trained Module 3 Model A ann.keras used for round-zero weights")
+    ap.add_argument(
         "--output-dir", required=True,
         help="new directory for the final ANN, preprocessor and run metadata")
     args = ap.parse_args()
@@ -40,6 +44,9 @@ def main():
         ap.error("Use at least 2 labs, 1 round and 1 local epoch")
     if not Path(args.preprocessor).is_file():
         ap.error("Provide an existing saved preprocessor; automatic fitting is disabled here")
+    initial_model_path = Path(args.initial_model).expanduser().resolve()
+    if not initial_model_path.is_file():
+        ap.error("--initial-model must point to the trained Module 3 ann.keras")
 
     import flwr as fl
 
@@ -64,9 +71,10 @@ def main():
                         local_epochs=args.local_epochs)
         return _as_flower_client(lab)
 
-    # 4. Strategy: initialize the global model from a fresh ANN.
+    # 4. Start federation from the trained Module 3 Model A ANN.
     from strategy import FedHealthStrategy, weighted_metric_average
-    initial = task.get_weights(task.get_model())
+    initial_model = task.load_initial_model(initial_model_path)
+    initial = task.get_weights(initial_model)
     strategy = FedHealthStrategy(
         fraction_fit=1.0, fraction_evaluate=1.0,
         min_fit_clients=args.labs, min_evaluate_clients=args.labs,
@@ -113,7 +121,13 @@ def main():
         run_info={
             "purpose": "federated_training",
             "trained": True,
-            "initialization": "fresh_ann",
+            "initialization": "module3_ann",
+            "initial_model": {
+                "filename": initial_model_path.name,
+                "sha256": hashlib.sha256(
+                    initial_model_path.read_bytes()
+                ).hexdigest(),
+            },
             "labs": args.labs,
             "rounds": args.rounds,
             "local_epochs": args.local_epochs,
