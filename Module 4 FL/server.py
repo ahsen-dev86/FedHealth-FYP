@@ -8,6 +8,7 @@
 # run without Docker, use fl/run_simulation.py instead.
 # ---------------------------------------------------------------------------
 import argparse
+import hashlib
 import os
 import sys
 
@@ -52,6 +53,10 @@ def main():
                     default=os.environ.get("REFERENCE_CSV", "../anemia_diagnosed_cbc_data_v4.csv"))
     ap.add_argument("--preprocessor",
                     default=os.environ.get("PREPROCESSOR", "./preprocessor.joblib"))
+    ap.add_argument(
+        "--initial-model",
+        default=os.environ.get("INITIAL_MODEL", "./ann.keras"),
+        help="trained Module 3 Model A ann.keras used for round-zero weights")
     # TLS: pass all three to enable a secure uplink (see scripts/gen_certs.sh).
     ap.add_argument("--ca-cert", default=os.environ.get("FL_CA_CERT"))
     ap.add_argument("--server-cert", default=os.environ.get("FL_SERVER_CERT"))
@@ -72,14 +77,20 @@ def main():
             "Provide the existing shared Module 3 preprocessor; "
             "automatic fitting is disabled for the FL server"
         )
+    initial_model_path = Path(args.initial_model).expanduser().resolve()
+    if not initial_model_path.is_file():
+        ap.error(
+            "Provide the trained Module 3 ann.keras with --initial-model"
+        )
 
     import flwr as fl
 
-    # Initialize the global model from a fresh ANN so architecture is fixed and
-    # identical to every client. (We also ensure the shared preprocessor exists.)
+    # Initialize the federation from Module 3's trained Model A ANN. Clients
+    # receive these weights from Flower, so only the server needs this file.
     prep = task.load_or_fit_preprocessor(
         args.reference_csv, args.preprocessor)
-    initial_weights = task.get_weights(task.get_model())
+    initial_model = task.load_initial_model(initial_model_path)
+    initial_weights = task.get_weights(initial_model)
     strategy = build_strategy(
         args.labs, initial_weights, args.local_epochs
     )
@@ -143,7 +154,13 @@ def main():
         run_info={
             "purpose": "standalone_client_server_training",
             "trained": True,
-            "initialization": "fresh_ann",
+            "initialization": "module3_ann",
+            "initial_model": {
+                "filename": initial_model_path.name,
+                "sha256": hashlib.sha256(
+                    initial_model_path.read_bytes()
+                ).hexdigest(),
+            },
             "labs": args.labs,
             "rounds": args.rounds,
             "local_epochs": args.local_epochs,

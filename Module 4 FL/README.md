@@ -1,8 +1,9 @@
 # FedHealth Module 4 — Federated Learning
 
-Module 4 is the plaintext Flower/FedAvg baseline for the Module 3 Model A ANN architecture.
+Module 4 is the plaintext Flower/FedAvg baseline for the trained Module 3 Model A ANN.
 Each lab keeps its CBC rows locally and sends ANN parameters plus example counts to the server.
-The shared Module 3 preprocessor gives every lab the same 14-feature order and scaling.
+The server loads Module 3's `ann.keras` as the round-zero global model. The shared Module 3
+preprocessor gives every lab the same 14-feature order and scaling.
 Module 4 does not exchange or train the XGBoost head. Module 5 adds Paillier encryption.
 
 ## Actual files
@@ -23,14 +24,15 @@ There are no Module 4 notebooks or notebook generator.
 
 ## Correct execution order
 
-Run commands from the repository root. Module 3's `preprocessor.joblib` is required.
+Run commands from the repository root. Module 3's `preprocessor.joblib` and `ann.keras`
+are required.
 Every model output path must be new because Module 4 refuses to overwrite evidence.
 
 1. Install: `python -m pip install -r "Module 4 FL/requirements.txt"`
 2. Prepare only Module 3 training rows:
    `python "Module 4 FL/prepare_training_split.py" --csv anemia_diagnosed_cbc_data_v4.csv --out module4_training.csv`
 3. Run a simulation:
-   `python "Module 4 FL/run_simulation.py" --csv module4_training.csv --labs 3 --rounds 2 --mode non_iid --local-epochs 1 --shard-dir module4_shards --preprocessor /path/preprocessor.joblib --output-dir /new/path/federated_ann`
+   `python "Module 4 FL/run_simulation.py" --csv module4_training.csv --labs 3 --rounds 2 --mode non_iid --local-epochs 1 --shard-dir module4_shards --preprocessor /path/preprocessor.joblib --initial-model /path/ann.keras --output-dir /new/path/federated_ann`
 
 The seed-42 split has 896 training, 128 validation and 257 test rows.
 The simulation uses Ray clients on one computer; it is not a multi-machine deployment.
@@ -39,6 +41,7 @@ The simulation uses Ray clients on one computer; it is not a multi-machine deplo
 
 Create shards with `partition.py`, then run `bash "Module 4 FL/gen_certs.sh"`.
 Start `server.py` with `--labs`, `--rounds`, `--local-epochs`, `--preprocessor`,
+`--initial-model`,
 `--output-dir`, `--ca-cert`, `--server-cert`, and `--server-key`.
 Start one `client.py` per lab with its own `--lab-id`, `--shard`, shared
 `--preprocessor`, server address and `--ca-cert`.
@@ -53,7 +56,8 @@ Build from the repository root:
 - `docker build -f "Module 4 FL/Dockerfile" -t fedhealth-fl-server .`
 - `docker build -f "Module 4 FL/Dockerfile.client" -t fedhealth-fl-client .`
 
-The server image expects `/artifacts/preprocessor.joblib` and writable `/output`.
+The server image expects `/artifacts/preprocessor.joblib`, `/artifacts/ann.keras`,
+and writable `/output`.
 The client expects the preprocessor and a shard such as `/data/lab_00.csv`.
 Docker Compose wiring is handled separately in Module 9.
 
