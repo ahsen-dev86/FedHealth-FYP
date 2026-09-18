@@ -1,0 +1,26 @@
+# Local-dev compose for Module 1 + 2 together. Whoever builds Module 9's
+# real multi-service compose file should fold this in rather than replace
+# it — the init/ mounting pattern below is what makes the SQL files run
+# automatically on first start.
+#
+# Usage:
+#   docker compose up -d db
+#   cp .env.example .env   # edit PATIENT_REF_HMAC_KEY, then:
+#   npm install && npm start
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fedhealth
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: change_me_superuser
+    ports:
+      - "5433:5432"
+    volumes:
+      - fedhealth_pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  fedhealth_pgdata:
