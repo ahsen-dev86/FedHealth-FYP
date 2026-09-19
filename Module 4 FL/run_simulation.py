@@ -32,6 +32,12 @@ def main():
         "--initial-model", required=True,
         help="trained Module 3 Model A ann.keras used for round-zero weights")
     ap.add_argument(
+        "--validation-arrays",
+        help="Module 3 arrays.npz; evaluates Xval/yval after every round")
+    ap.add_argument(
+        "--early-stopping-patience", type=int, default=3,
+        help="freeze best-round selection after this many non-improving rounds")
+    ap.add_argument(
         "--output-dir", required=True,
         help="new directory for the final ANN, preprocessor and run metadata")
     args = ap.parse_args()
@@ -42,6 +48,8 @@ def main():
         ap.error("--output-dir must not already exist")
     if args.labs < 2 or args.rounds < 1 or args.local_epochs < 1:
         ap.error("Use at least 2 labs, 1 round and 1 local epoch")
+    if args.early_stopping_patience < 1:
+        ap.error("--early-stopping-patience must be at least 1")
     if not Path(args.preprocessor).is_file():
         ap.error("Provide an existing saved preprocessor; automatic fitting is disabled here")
     initial_model_path = Path(args.initial_model).expanduser().resolve()
@@ -75,12 +83,30 @@ def main():
     from strategy import FedHealthStrategy, weighted_metric_average
     initial_model = task.load_initial_model(initial_model_path)
     initial = task.get_weights(initial_model)
+    validation_tracker = None
+    if args.validation_arrays:
+        from validation import ValidationTracker, load_validation_arrays
+        validation_path = Path(args.validation_arrays).expanduser().resolve()
+        if not validation_path.is_file():
+            ap.error("--validation-arrays must point to Module 3 arrays.npz")
+        Xval, yval = load_validation_arrays(
+            validation_path, task.INPUT_DIM, task.N_CLASSES
+        )
+        validation_tracker = ValidationTracker(
+            task.get_model(), Xval, yval,
+            n_classes=task.N_CLASSES,
+            patience=args.early_stopping_patience,
+        )
+
     strategy = FedHealthStrategy(
         fraction_fit=1.0, fraction_evaluate=1.0,
         min_fit_clients=args.labs, min_evaluate_clients=args.labs,
         min_available_clients=args.labs,
         initial_parameters=task.ndarrays_to_parameters(initial),
         evaluate_metrics_aggregation_fn=weighted_metric_average,
+        evaluate_fn=(
+            validation_tracker.evaluate if validation_tracker else None
+        ),
         accept_failures=False,
     )
 
@@ -112,10 +138,15 @@ def main():
 
     from fl_artifacts import save_ann_checkpoint
     final_model = task.get_model()
-    task.set_weights(
-        final_model,
-        task.parameters_to_ndarrays(strategy.last_aggregated_parameters),
-    )
+    if validation_tracker:
+        if validation_tracker.best_weights is None:
+            raise RuntimeError("Validation did not produce a selectable model")
+        selected_weights = validation_tracker.best_weights
+    else:
+        selected_weights = task.parameters_to_ndarrays(
+            strategy.last_aggregated_parameters
+        )
+    task.set_weights(final_model, selected_weights)
     checkpoint = save_ann_checkpoint(
         final_model, prep, output_dir,
         run_info={
@@ -132,6 +163,20 @@ def main():
             "rounds": args.rounds,
             "local_epochs": args.local_epochs,
             "partition_mode": args.mode,
+            "model_selection": (
+                {
+                    "metric": "validation_macro_f1",
+                    "best_round": validation_tracker.best_round,
+                    "best_metrics": validation_tracker.best_metrics,
+                    "patience": validation_tracker.patience,
+                    "selection_stopped_at": (
+                        validation_tracker.selection_stopped_at
+                    ),
+                    "history": validation_tracker.history,
+                }
+                if validation_tracker else
+                {"metric": "final_round", "best_round": args.rounds}
+            ),
             "history": {
                 "losses_distributed": hist.losses_distributed,
                 "metrics_distributed": hist.metrics_distributed,
@@ -140,6 +185,12 @@ def main():
         },
     )
     print("Saved and reload-verified ANN checkpoint:", checkpoint)
+
+    if validation_tracker:
+        print(
+            "Selected validation round:", validation_tracker.best_round,
+            "macro-F1:", f"{validation_tracker.best_macro_f1:.3f}",
+        )
 
     print("\n=== Federated training complete ===")
     for rnd, metrics in hist.metrics_distributed.get("macro_f1", []):
