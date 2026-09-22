@@ -1,9 +1,28 @@
 // frontend/src/components/Layout.jsx
-// Shared shell for authenticated pages: topbar with role-aware nav + user
-// chip, then the page content. Wrapped around every /doctor and /surveillance
-// route by the Protected guard in App.jsx.
-import { NavLink } from 'react-router-dom';
+// Shared shell for authenticated pages: a role-aware sidebar (shadcn `sidebar`
+// primitive) + a slim top header for page context, wrapping the page content.
+// Wrapped around every protected route by the Protected guard in App.jsx.
+import { NavLink, useLocation } from 'react-router-dom';
+import { LogOut, Stethoscope, Radar, ActivitySquare, HeartHandshake, Building2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from './ui/sidebar';
+import { Avatar, AvatarFallback } from './ui/avatar';
+import { Button } from './ui/button';
+import { Separator } from './ui/separator';
 
 // Display-only labels, decoupled from the backend role slug (which stays
 // e.g. 'nih_official' to match Module 2/6 RBAC) so the UI can use generic
@@ -12,33 +31,95 @@ const ROLE_LABELS = {
   doctor: 'Doctor',
   lab_tech: 'Lab technician',
   nih_official: 'Health official',
+  ngo: 'NGO partner',
+  admin: 'Administrator',
 };
+
+const NAV_ITEMS = [
+  { to: '/doctor', label: 'Doctor Portal', icon: Stethoscope, show: (can) => can('prediction:create') },
+  { to: '/surveillance', label: 'Surveillance', icon: Radar, show: (can) => can('nih:dashboard') },
+  { to: '/model-health', label: 'Model Health', icon: ActivitySquare, show: (can) => can('nih:dashboard') },
+  { to: '/ngo', label: 'My NGO', icon: Building2, show: (can, role) => role === 'ngo' },
+  { to: '/help', label: 'Help Portal', icon: HeartHandshake, show: () => true },
+];
+
+function initials(name) {
+  if (!name) return '?';
+  return name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
+}
 
 export default function Layout({ children }) {
   const { user, can, logout } = useAuth();
+  const location = useLocation();
 
   return (
-    <div className="fh-app">
-      <div className="fh-topbar">
-        <div className="fh-topbar__inner">
-          <div className="fh-brand">Fed<span>Health</span></div>
-          <nav style={{ display: 'flex', gap: 4 }}>
-            {can('prediction:create') && <NavLink to="/doctor">Doctor Portal</NavLink>}
-            {can('nih:dashboard') && <NavLink to="/surveillance">Surveillance Dashboard</NavLink>}
-          </nav>
-          <div className="fh-topbar__spacer" />
-          {user && (
-            <div className="fh-userchip">
-              <span>{user.fullName || user.email}</span>
-              <span className="role">{ROLE_LABELS[user.role] || (user.role || '').replace(/_/g, ' ')}</span>
-              <button className="fh-btn fh-btn--ghost" style={{ padding: '4px 10px' }} onClick={logout}>
-                Log out
-              </button>
+    <SidebarProvider>
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <div className="flex size-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-bold text-sm">
+              F
             </div>
-          )}
+            <span className="text-sm font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+              Fed<span className="text-sidebar-ring">Health</span>
+            </span>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {NAV_ITEMS.filter((item) => item.show(can, user?.role)).map((item) => {
+                  const active = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                  return (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton render={<NavLink to={item.to} />} isActive={active} tooltip={item.label}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        {user && (
+          <SidebarFooter>
+            <div className="flex items-center gap-2 rounded-md px-2 py-1.5 group-data-[collapsible=icon]:justify-center">
+              <Avatar size="sm">
+                <AvatarFallback>{initials(user.fullName || user.email)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                <p className="truncate text-xs font-medium text-sidebar-foreground">{user.fullName || user.email}</p>
+                <p className="truncate text-[11px] text-sidebar-foreground/60">
+                  {ROLE_LABELS[user.role] || (user.role || '').replace(/_/g, ' ')}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground group-data-[collapsible=icon]:hidden"
+                onClick={logout}
+                aria-label="Log out"
+              >
+                <LogOut />
+              </Button>
+            </div>
+          </SidebarFooter>
+        )}
+      </Sidebar>
+      <SidebarInset>
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+          <SidebarTrigger />
+          <Separator orientation="vertical" className="h-4" />
+          <span className="text-sm text-muted-foreground">FedHealth federated clinical intelligence</span>
+        </header>
+        <div className="flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-[1180px] p-6">{children}</div>
         </div>
-      </div>
-      <div className="fh-main">{children}</div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

@@ -22,10 +22,12 @@ let pendingMfaSetup = null; // in-flight /auth/mfa/setup promise, see route()
 function roleFromEmail(email) {
   if (/nih/i.test(email)) return 'nih_official';
   if (/lab/i.test(email)) return 'lab_tech';
+  if (/ngo/i.test(email)) return 'ngo';
   return 'doctor';
 }
 function permsForRole(role) {
   if (role === 'nih_official') return ['nih:dashboard'];
+  if (role === 'ngo') return ['help:manage_own'];
   return ['prediction:create'];
 }
 
@@ -226,6 +228,163 @@ const AUDIT_LOG = Array.from({ length: 12 }).map((_, i) => ({
   resource_id: 1000 + i,
 }));
 
+// ---- dummy Help Portal data -------------------------------------------------
+let ngoSeq = 1;
+let requestSeq = 1;
+const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
+const inDays = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+
+const NGOS = [
+  {
+    name: 'Roshni Thalassemia Foundation', mission: 'Free blood transfusions and iron-chelation support for thalassemia major patients.',
+    description: 'Roshni runs a dedicated transfusion ward and subsidizes chelation therapy for over 300 registered children across Punjab. Founded in 2011 by a group of parents.',
+    website: 'https://roshni-example.org', contact_email: 'help@roshni-example.org', contact_phone: '+92 300 1234567',
+    district: 'Lahore', province: 'Punjab', verified: true,
+    donation_info: { bank: 'Meezan Bank — 0123-4567-8901 (Roshni Thalassemia Foundation)', jazzcash: '0300-1234567', easypaisa: '0300-1234567' },
+  },
+  {
+    name: 'Sindh Blood Relief Trust', mission: 'Mobile blood donation drives and an emergency donor registry across Sindh.',
+    description: 'A donor-matching hotline plus monthly donation camps in Karachi, Hyderabad, and Sukkur. Works directly with hospital blood banks to cover shortfalls.',
+    website: 'https://sindhbloodrelief-example.org', contact_email: 'contact@sindhbloodrelief-example.org', contact_phone: '+92 321 9876543',
+    district: 'Karachi', province: 'Sindh', verified: true,
+    donation_info: { bank: 'HBL — 5566-7788-9900 (Sindh Blood Relief Trust)', jazzcash: '0321-9876543' },
+  },
+  {
+    name: 'KPK Anemia & Nutrition Alliance', mission: 'Iron-deficiency screening and micronutrient supplementation for women and children.',
+    description: 'Runs school and clinic screening programs and distributes iron-folate supplements in underserved districts.',
+    website: '', contact_email: 'info@kpk-anemia-example.org', contact_phone: '+92 333 4455667',
+    district: 'Peshawar', province: 'KPK', verified: false,
+    donation_info: { easypaisa: '0333-4455667' },
+  },
+  {
+    name: 'Hope for Leukemia Pakistan', mission: 'Covers diagnostic and chemotherapy costs for children with leukemia from low-income families.',
+    description: 'Partners with three tertiary hospitals to fast-track diagnosis and subsidize treatment; also funds a small patient-family lodging facility.',
+    website: 'https://hopeforleukemia-example.org', contact_email: 'donate@hopeforleukemia-example.org', contact_phone: '+92 345 1122334',
+    district: 'Islamabad', province: 'Islamabad', verified: true,
+    donation_info: { bank: 'UBL — 1122-3344-5566 (Hope for Leukemia Pakistan)', paypal: 'giving@hopeforleukemia-example.org' },
+  },
+  {
+    name: 'Balochistan Rural Health Circle', mission: 'Bringing basic hematology testing and referral transport to remote districts.',
+    description: 'A small volunteer-run outfit covering Quetta and surrounding rural union councils with a single mobile lab van.',
+    website: '', contact_email: 'brhc@example.org', contact_phone: '+92 331 7788990',
+    district: 'Quetta', province: 'Balochistan', verified: false,
+    donation_info: { jazzcash: '0331-7788990' },
+  },
+];
+
+const NGO_DIRECTORY = NGOS.map((n, i) => ({
+  id: `ngo-${i + 1}`, created_at: ago(200 - i * 10), logo_url: null, ...n,
+}));
+
+const REQUEST_TEMPLATES = [
+  { category: 'blood', blood_group: 'O-', title: 'Urgent O- units needed for transfusion ward', quantity: '15 units', urgency: 'critical', neededByIn: 3 },
+  { category: 'blood', blood_group: 'B+', title: 'Weekly B+ donor shortfall', quantity: '8 units', urgency: 'high', neededByIn: 7 },
+  { category: 'medicine', title: 'Deferasirox (iron chelation) — stock running low', quantity: '200 tablets', urgency: 'high', neededByIn: 10 },
+  { category: 'medicine', title: 'Folic acid & iron supplements for screening camp', quantity: '1000 packs', urgency: 'medium', neededByIn: 21 },
+  { category: 'equipment', title: 'Portable hemoglobinometers for field screening', quantity: '4 units', urgency: 'medium', neededByIn: 30 },
+  { category: 'equipment', title: 'Centrifuge for blood component separation', quantity: '1 unit', urgency: 'low', neededByIn: 45 },
+  { category: 'funds', title: 'Chemotherapy cost subsidy — Q1 shortfall', quantity: 'PKR 850,000', urgency: 'high', neededByIn: 14 },
+  { category: 'funds', title: 'Mobile lab van fuel & maintenance fund', quantity: 'PKR 120,000', urgency: 'medium', neededByIn: 20 },
+];
+
+const SUPPLY_REQUESTS = NGO_DIRECTORY.flatMap((ngo, ni) => {
+  const count = 1 + (ni % 3);
+  return Array.from({ length: count }).map((_, i) => {
+    const t = REQUEST_TEMPLATES[(ni * 2 + i) % REQUEST_TEMPLATES.length];
+    return {
+      id: `req-${requestSeq++}`, ngo_id: ngo.id, ngo_name: ngo.name, ngo_district: ngo.district,
+      category: t.category, blood_group: t.blood_group || null, title: t.title,
+      description: `Posted by ${ngo.name}. ${t.category === 'blood' ? 'Please contact the NGO directly before donating in person.' : 'Reach out via the contact details on our profile to coordinate delivery.'}`,
+      quantity: t.quantity, urgency: t.urgency, status: i === 0 && ni % 4 === 0 ? 'partially_fulfilled' : 'open',
+      needed_by: inDays(t.neededByIn), district: ngo.district, province: ngo.province,
+      created_at: ago(20 - ni - i), updated_at: ago(2),
+    };
+  });
+});
+
+// The signed-in NGO's own profile, created lazily on first access (mirrors
+// the real backend's get-or-create-on-first-touch behavior).
+let myNgo = null;
+function ensureMyNgo(fullName) {
+  if (!myNgo) {
+    myNgo = {
+      id: 'ngo-me', created_at: new Date().toISOString(), logo_url: null,
+      name: fullName || 'My NGO', mission: '', description: '', website: '',
+      contact_email: session?.email || '', contact_phone: '',
+      district: '', province: '', verified: false, donation_info: {},
+    };
+  }
+  return myNgo;
+}
+let myRequests = [];
+
+// ---- dummy Model Health data -------------------------------------------------
+const NODES_META = [
+  { name: 'Aga Khan Lab - Karachi', district: 'Karachi', province: 'Sindh', fl_client_id: 'lab-khi-01', freshnessDays: 1 },
+  { name: 'Shaukat Khanum - Lahore', district: 'Lahore', province: 'Punjab', fl_client_id: 'lab-lhr-01', freshnessDays: 0 },
+  { name: 'PIMS Lab - Islamabad', district: 'Islamabad', province: 'Islamabad', fl_client_id: 'lab-isb-01', freshnessDays: 12 },
+  { name: 'LRH Lab - Peshawar', district: 'Peshawar', province: 'KPK', fl_client_id: 'lab-pew-01', freshnessDays: 45 },
+];
+
+function makeAccuracyHistory() {
+  const points = [];
+  let loss = 1.35, acc = 0.52;
+  for (let r = 1; r <= 12; r++) {
+    loss = Math.max(0.18, loss - (0.09 + Math.random() * 0.03));
+    acc = Math.min(0.94, acc + (0.03 + Math.random() * 0.015));
+    points.push({
+      round_number: r, loss: +loss.toFixed(3), accuracy: +acc.toFixed(3),
+      clients: NODES_META.length, created_at: ago(60 - r * 4),
+    });
+  }
+  return { source: 'fl_rounds', points };
+}
+
+function makeNodes() {
+  const now = Date.now();
+  return NODES_META.map((n, i) => {
+    const lastMs = now - n.freshnessDays * 86400000;
+    const status = n.freshnessDays <= 7 ? 'up' : n.freshnessDays <= 30 ? 'stale' : 'down';
+    return {
+      id: `lab-${i + 1}`, name: n.name, district: n.district, province: n.province, fl_client_id: n.fl_client_id,
+      last_report_at: new Date(lastMs).toISOString(),
+      reports_7d: status === 'up' ? 20 + i * 6 : status === 'stale' ? 2 : 0,
+      reports_30d: status === 'down' ? 3 : 40 + i * 10,
+      reports_total: 300 + i * 120,
+      status,
+    };
+  });
+}
+
+function makeDataIntake(days) {
+  const byDay = Array.from({ length: Math.min(days, 21) }).map((_, i) => ({
+    day: ago(Math.min(days, 21) - 1 - i).slice(0, 10),
+    count: 8 + Math.round(Math.random() * 20) + (i % 7 === 0 ? 15 : 0),
+  }));
+  const bySource = [
+    { source: 'lims', count: 640 }, { source: 'manual', count: 210 }, { source: 'ocr', count: 95 },
+  ];
+  const byCondition = [
+    { condition: 'healthy', count: 410 }, { condition: 'iron_deficiency_anemia', count: 180 },
+    { condition: 'thrombocytopenia', count: 95 }, { condition: 'macrocytic_anemia', count: 70 },
+    { condition: 'leukemia', count: 34 }, { condition: 'beta_thal_trait', count: 58 },
+    { condition: 'leukemia_with_thrombocytopenia', count: 12 },
+  ];
+  return { byDay, bySource, byCondition };
+}
+
+function makeNodeContribution(days) {
+  const span = Math.min(days, 14);
+  const rows = [];
+  NODES_META.forEach((n, i) => {
+    for (let d = 0; d < span; d++) {
+      const base = n.freshnessDays > 30 ? 0 : n.freshnessDays > 7 ? (d < 2 ? 3 : 0) : 6 + i * 2;
+      rows.push({ lab_id: `lab-${i + 1}`, name: n.name, day: ago(span - 1 - d).slice(0, 10), count: Math.max(0, base + Math.round(Math.random() * 4) - 1) });
+    }
+  });
+  return rows;
+}
+
 // ---- request router ---------------------------------------------------------
 async function route(method, path, body) {
   const [pathname, qs] = path.split('?');
@@ -387,6 +546,113 @@ async function route(method, path, body) {
     return AUDIT_LOG;
   }
 
+  // --- Help Portal (public browsing + NGO self-service) ---
+  if (pathname === '/help/ngos' && method === 'GET') {
+    await delay(450);
+    return NGO_DIRECTORY.map((n) => ({
+      ...n,
+      open_request_count: SUPPLY_REQUESTS.filter((r) => r.ngo_id === n.id && r.status !== 'closed' && r.status !== 'fulfilled').length,
+    }));
+  }
+  if (pathname === '/help/requests' && method === 'GET') {
+    await delay(450);
+    let rows = SUPPLY_REQUESTS.filter((r) => r.status === 'open' || r.status === 'partially_fulfilled');
+    const category = params.get('category');
+    const province = params.get('province');
+    const urgency = params.get('urgency');
+    if (category) rows = rows.filter((r) => r.category === category);
+    if (province) rows = rows.filter((r) => r.province === province);
+    if (urgency) rows = rows.filter((r) => r.urgency === urgency);
+    const order = { critical: 0, high: 1, medium: 2, low: 3 };
+    return [...rows].sort((a, b) => order[a.urgency] - order[b.urgency]);
+  }
+  if (pathname === '/help/ngos/me' && method === 'GET') {
+    await delay(300);
+    return ensureMyNgo(session?.fullName);
+  }
+  if (pathname === '/help/ngos/me' && method === 'PUT') {
+    await delay(400);
+    const ngo = ensureMyNgo(session?.fullName);
+    Object.assign(ngo, {
+      name: body.name ?? ngo.name, mission: body.mission ?? ngo.mission,
+      description: body.description ?? ngo.description, website: body.website ?? ngo.website,
+      contact_email: body.contactEmail || ngo.contact_email,
+      contact_phone: body.contactPhone || ngo.contact_phone,
+      district: body.district ?? ngo.district, province: body.province ?? ngo.province,
+      donation_info: body.donationInfo ? { ...ngo.donation_info, ...body.donationInfo } : ngo.donation_info,
+    });
+    return ngo;
+  }
+  if (pathname === '/help/ngos/me/requests' && method === 'GET') {
+    await delay(300);
+    return myRequests;
+  }
+  if (pathname === '/help/ngos/me/requests' && method === 'POST') {
+    await delay(400);
+    const ngo = ensureMyNgo(session?.fullName);
+    const created = {
+      id: `req-mine-${myRequests.length + 1}`, ngo_id: ngo.id,
+      category: body.category, blood_group: body.bloodGroup || null,
+      title: body.title, description: body.description || '', quantity: body.quantity || null,
+      urgency: body.urgency || 'medium', status: 'open', needed_by: body.neededBy || null,
+      district: body.district || ngo.district, province: body.province || ngo.province,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    };
+    myRequests = [created, ...myRequests];
+    return created;
+  }
+  const patchReqMatch = pathname.match(/^\/help\/ngos\/me\/requests\/([^/]+)$/);
+  if (patchReqMatch && method === 'PATCH') {
+    await delay(350);
+    const id = patchReqMatch[1];
+    const idx = myRequests.findIndex((r) => r.id === id);
+    if (idx === -1) { const e = new Error('Request not found'); e.status = 404; throw e; }
+    myRequests[idx] = { ...myRequests[idx], ...body, updated_at: new Date().toISOString() };
+    return myRequests[idx];
+  }
+  const ngoDetailMatch = pathname.match(/^\/help\/ngos\/([^/]+)$/);
+  if (ngoDetailMatch && method === 'GET') {
+    await delay(400);
+    const id = ngoDetailMatch[1];
+    const ngo = id === 'ngo-me' ? ensureMyNgo(session?.fullName) : NGO_DIRECTORY.find((n) => n.id === id);
+    if (!ngo) { const e = new Error('NGO not found'); e.status = 404; throw e; }
+    const requests = id === 'ngo-me' ? myRequests : SUPPLY_REQUESTS.filter((r) => r.ngo_id === id);
+    return { ...ngo, requests };
+  }
+
+  // --- Model Health dashboard ---
+  if (pathname === '/model-health/summary' && method === 'GET') {
+    await delay(400);
+    return {
+      activeModel: {
+        name: 'FedHealth CBC-Net', version: 'v1.0.0-preview',
+        metrics: { macro_f1: 0.87, accuracy: 0.91 }, created_at: ago(4),
+      },
+      totalPredictions: 4820, avgInferenceMs: 118, totalLabReports: 5310,
+      lastTrainingRun: { started_at: ago(5), completed_at: ago(4), total_rounds: 12, labs: NODES_META.length, encryption: 'paillier', key_bits: 2048 },
+    };
+  }
+  if (pathname === '/model-health/accuracy-history' && method === 'GET') {
+    await delay(500);
+    return makeAccuracyHistory();
+  }
+  if (pathname === '/model-health/nodes' && method === 'GET') {
+    await delay(400);
+    return makeNodes();
+  }
+  if (pathname === '/model-health/data-intake' && method === 'GET') {
+    await delay(450);
+    return makeDataIntake(Number(params.get('days')) || 30);
+  }
+  if (pathname === '/model-health/node-contribution' && method === 'GET') {
+    await delay(450);
+    return makeNodeContribution(Number(params.get('days')) || 30);
+  }
+  if (pathname === '/model-health/encryption' && method === 'GET') {
+    await delay(300);
+    return { scheme: 'paillier', keyBits: 2048, roundsEncrypted: 12, lastRunCompletedAt: ago(4) };
+  }
+
   const e = new Error(`(preview mock) No dummy handler for ${method} ${pathname}`);
   e.status = 404;
   throw e;
@@ -395,5 +661,7 @@ async function route(method, path, body) {
 export const api = {
   get: (path) => route('GET', path),
   post: (path, body) => route('POST', path, body || {}),
+  put: (path, body) => route('PUT', path, body || {}),
+  patch: (path, body) => route('PATCH', path, body || {}),
   upload: (path) => route('UPLOAD', path),
 };

@@ -4,7 +4,14 @@
 // redirecting home.
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
 import { useAuth } from './AuthContext';
+import { Card, CardContent } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Button } from '../components/ui/button';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Separator } from '../components/ui/separator';
 
 export default function MfaPage() {
   const { mfaSetup, mfaVerifySetup, mfaVerify } = useAuth();
@@ -43,43 +50,52 @@ export default function MfaPage() {
   }
 
   return (
-    <div className="fh-auth">
-      <div className="fh-auth__card fh-card">
-        <div className="fh-card__body">
-          <div className="fh-auth__brand">
-            <div className="fh-brand" style={{ fontSize: 22 }}>Two-factor authentication</div>
-            <p>{mode === 'setup'
-              ? 'Scan the code with an authenticator app, then enter the 6-digit code.'
-              : 'Enter the 6-digit code from your authenticator app.'}</p>
+    <div className="grid min-h-full place-items-center bg-[radial-gradient(1200px_600px_at_50%_-10%,color-mix(in_oklch,var(--primary),white_85%)_0%,var(--background)_60%)] p-6">
+      <Card className="w-full max-w-[400px]">
+        <CardContent className="pt-2">
+          <div className="mb-6 text-center">
+            <div className="text-xl font-bold tracking-tight text-foreground">Two-factor authentication</div>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {mode === 'setup'
+                ? 'Scan the code with an authenticator app, then enter the 6-digit code.'
+                : 'Enter the 6-digit code from your authenticator app.'}
+            </p>
           </div>
 
-          {error && <div className="fh-error" style={{ marginBottom: 14 }}>{error}</div>}
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
           {mode === 'setup' && enrol && (
             <>
-              <img className="fh-qr" src={enrol.qrDataUrl} alt="Authenticator QR code" />
-              <p className="fh-muted" style={{ textAlign: 'center', margin: '4px 0 6px' }}>
-                Can’t scan? Enter this key manually:
+              <img className="mx-auto block h-[190px] w-[190px] rounded-lg border border-border"
+                   src={enrol.qrDataUrl} alt="Authenticator QR code" />
+              <p className="mt-2 mb-1.5 text-center text-sm text-muted-foreground">
+                Can't scan? Enter this key manually:
               </p>
-              <div className="fh-key">{enrol.manualKey}</div>
-              <hr className="fh-hr" />
+              <div className="rounded-md bg-muted p-2 text-center font-mono text-[13px] break-all">
+                {enrol.manualKey}
+              </div>
+              <Separator className="my-4" />
             </>
           )}
 
-          <form onSubmit={submit}>
-            <div className="fh-field">
-              <label className="fh-label">6-digit code</label>
-              <input className="fh-input fh-num" inputMode="numeric" maxLength={6}
+          <form onSubmit={submit} className="space-y-3.5">
+            <div className="space-y-1.5">
+              <Label htmlFor="mfa-code">6-digit code</Label>
+              <Input id="mfa-code" className="text-center font-mono tracking-[0.3em]" inputMode="numeric" maxLength={6}
                      value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                      placeholder="000000" autoFocus />
             </div>
-            <button className="fh-btn fh-btn--primary" style={{ width: '100%' }}
-                    disabled={busy || code.length !== 6}>
+            <Button type="submit" className="w-full" disabled={busy || code.length !== 6}>
               {busy ? 'Verifying…' : mode === 'setup' ? 'Activate & continue' : 'Verify'}
-            </button>
+            </Button>
           </form>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

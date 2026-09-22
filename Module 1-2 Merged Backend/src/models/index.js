@@ -11,4 +11,7 @@ module.exports = {
   Alerts:       require('./alerts'),
   NihClusters:  require('./nihClusters'),
   Pseudonymize: require('./pseudonymize'),
+  Ngos:            require('./ngos'),
+  SupplyRequests:  require('./supplyRequests'),
+  ModelHealth:     require('./modelHealth'),
 };

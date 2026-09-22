@@ -8,8 +8,13 @@
 // doctor); they are NOT fed into the CBC model. Voice is a progressive
 // enhancement — the mic button hides if the browser lacks Speech Recognition.
 import { useRef, useState } from 'react';
+import { Mic, Square, Sparkles } from 'lucide-react';
 import { api } from '../api/client';
 import { symptomLabel } from '../lib/format';
+import { Textarea } from '../components/ui/textarea';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const SR = typeof window !== 'undefined'
   ? (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -52,31 +57,36 @@ export default function SymptomIntake({ value, onChange, tags, onParsed }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <select className="fh-select" style={{ width: 'auto' }} value={lang} onChange={(e) => setLang(e.target.value)}>
-          <option value="en-US">English</option>
-          <option value="ur-PK">اردو (Urdu)</option>
-        </select>
+      <div className="mb-2 flex gap-2">
+        <Select value={lang} onValueChange={setLang}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue>{(v) => (v === 'ur-PK' ? 'اردو (Urdu)' : 'English')}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="en-US">English</SelectItem>
+            <SelectItem value="ur-PK">اردو (Urdu)</SelectItem>
+          </SelectContent>
+        </Select>
         {SR && (
-          <button className={`fh-btn ${listening ? 'fh-btn--primary' : 'fh-btn--ghost'}`} onClick={toggleVoice} type="button">
-            {listening ? '● Listening…' : '🎤 Dictate'}
-          </button>
+          <Button type="button" variant={listening ? 'default' : 'outline'} size="sm" onClick={toggleVoice}>
+            {listening ? <Square /> : <Mic />}
+            {listening ? 'Listening…' : 'Dictate'}
+          </Button>
         )}
       </div>
-      <textarea className="fh-textarea" rows={3} value={value}
+      <Textarea rows={3} value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="e.g. fatigue, pale skin, shortness of breath — یا اردو میں: تھکن، پیلاہٹ" />
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-        <button className="fh-btn fh-btn--ghost" onClick={recognize} disabled={busy || !value?.trim()} type="button">
+      <div className="mt-2 flex items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={recognize} disabled={busy || !value?.trim()}>
+          <Sparkles />
           {busy ? 'Recognizing…' : 'Recognize symptoms'}
-        </button>
+        </Button>
       </div>
       {tags?.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
           {tags.map((t) => (
-            <span key={t} className="fh-pill fh-pill--muted" style={{ textTransform: 'capitalize' }}>
-              {symptomLabel(t)}
-            </span>
+            <Badge key={t} variant="secondary" className="capitalize">{symptomLabel(t)}</Badge>
           ))}
         </div>
       )}

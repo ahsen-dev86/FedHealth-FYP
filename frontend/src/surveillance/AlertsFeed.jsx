@@ -4,13 +4,20 @@
 // acknowledge alerts. All alert content is aggregate/anonymized.
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { conditionLabel } from '../lib/format';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 
-const SEV_STYLE = {
-  critical: { bg: '#FBEEEC', border: '#EEC9C3', text: '#B4453C' },
-  high:     { bg: '#FBF3E4', border: '#ECD9AE', text: '#B7791F' },
-  medium:   { bg: '#EAF1EF', border: '#D3E2DE', text: '#0F3A3E' },
-  low:      { bg: '#F1F4F3', border: '#E0E7E5', text: '#5A6B68' },
+const SEV_VARIANT = {
+  critical: 'border-destructive/30 bg-destructive/10',
+  high: 'border-warning/30 bg-warning/10',
+  medium: 'border-border bg-muted/50',
+  low: 'border-border bg-muted/30',
+};
+const SEV_TEXT = {
+  critical: 'text-destructive',
+  high: 'text-warning',
+  medium: 'text-foreground',
+  low: 'text-muted-foreground',
 };
 
 export default function AlertsFeed({ onData }) {
@@ -36,42 +43,36 @@ export default function AlertsFeed({ onData }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      <div className="mb-3 flex gap-2">
         {['open', 'acknowledged', 'resolved'].map((s) => (
-          <button key={s} className={`fh-btn ${s === status ? 'fh-btn--primary' : 'fh-btn--ghost'}`}
-                  style={{ padding: '5px 12px', textTransform: 'capitalize' }}
-                  onClick={() => setStatus(s)}>{s}</button>
+          <Button key={s} size="sm" variant={s === status ? 'default' : 'outline'}
+                  className="capitalize" onClick={() => setStatus(s)}>{s}</Button>
         ))}
       </div>
 
-      {err && <p className="fh-error">{err}</p>}
-      {!alerts && <p className="fh-muted">Loading alerts…</p>}
-      {alerts && alerts.length === 0 && <p className="fh-muted">No {status} alerts.</p>}
+      {err && <p className="text-sm text-destructive">{err}</p>}
+      {!alerts && <p className="text-sm text-muted-foreground">Loading alerts…</p>}
+      {alerts && alerts.length === 0 && <p className="text-sm text-muted-foreground">No {status} alerts.</p>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {alerts?.map((a) => {
-          const s = SEV_STYLE[a.severity] || SEV_STYLE.low;
-          return (
-            <div key={a.id} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 8, padding: '12px 14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: s.text }}>
-                    {a.title}
-                  </div>
-                  <div className="fh-muted" style={{ fontSize: 13, marginTop: 2 }}>{a.description}</div>
-                  <div className="fh-muted" style={{ fontSize: 12, marginTop: 6 }}>
-                    <span className="fh-pill fh-pill--muted" style={{ marginRight: 6 }}>{a.type.replace(/_/g, ' ')}</span>
-                    {a.district ? `${a.district} · ` : ''}{new Date(a.created_at).toLocaleString()}
-                  </div>
+      <div className="flex flex-col gap-2.5">
+        {alerts?.map((a) => (
+          <div key={a.id} className={`rounded-lg border px-3.5 py-3 ${SEV_VARIANT[a.severity] || SEV_VARIANT.low}`}>
+            <div className="flex justify-between gap-2.5">
+              <div className="min-w-0">
+                <div className={`font-semibold ${SEV_TEXT[a.severity] || SEV_TEXT.low}`}>{a.title}</div>
+                <div className="mt-0.5 text-[13px] text-muted-foreground">{a.description}</div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <Badge variant="outline" className="capitalize">{a.type.replace(/_/g, ' ')}</Badge>
+                  {a.district ? `${a.district} · ` : ''}{new Date(a.created_at).toLocaleString()}
                 </div>
-                {status === 'open' && (
-                  <button className="fh-btn fh-btn--ghost" style={{ height: 34, whiteSpace: 'nowrap' }}
-                          onClick={() => acknowledge(a.id)}>Acknowledge</button>
-                )}
               </div>
+              {status === 'open' && (
+                <Button variant="outline" size="sm" className="h-fit shrink-0 whitespace-nowrap"
+                        onClick={() => acknowledge(a.id)}>Acknowledge</Button>
+              )}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -14,6 +14,8 @@ const helmet = require('helmet');
 const cors = require('cors');
 
 const authRoutes = require('./auth/routes');
+const helpRoutes = require('./routes/help');
+const modelHealthRoutes = require('./routes/modelHealth');
 const { requireAuth } = require('./middleware/requireAuth');
 const { requirePermission } = require('./middleware/rbac');
 const { auditAction } = require('./middleware/audit');
@@ -33,6 +35,8 @@ function createApp() {
   app.get('/health', (req, res) => res.json({ ok: true, service: 'fedhealth-backend' }));
 
   app.use('/auth', authRoutes);
+  app.use('/help', helpRoutes);
+  app.use('/model-health', modelHealthRoutes);
 
   // --- Compliance endpoints (admin only) -----------------------------------
   app.get(
