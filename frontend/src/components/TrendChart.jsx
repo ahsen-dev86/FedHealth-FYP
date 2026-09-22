@@ -11,6 +11,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { CBC_FIELDS } from '../lib/format';
+import { Button } from './ui/button';
 
 // Sensible defaults to plot; the doctor can switch the index.
 const PLOTTABLE = ['HGB', 'PLT', 'MCV', 'WBC', 'RBC', 'MCH'];
@@ -28,30 +29,28 @@ export default function TrendChart({ reports }) {
     .filter((p) => p.value != null);
 
   if (data.length < 2) {
-    return <p className="fh-muted">Need at least two visits with a {metric} value to show a trend.</p>;
+    return <p className="text-sm text-muted-foreground">Need at least two visits with a {metric} value to show a trend.</p>;
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+      <div className="mb-2.5 flex flex-wrap gap-1.5">
         {PLOTTABLE.map((m) => (
-          <button key={m}
-                  className={`fh-btn ${m === metric ? 'fh-btn--primary' : 'fh-btn--ghost'}`}
-                  style={{ padding: '4px 10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}
-                  onClick={() => setMetric(m)}>
+          <Button key={m} type="button" size="sm" variant={m === metric ? 'default' : 'outline'}
+                  className="font-mono" onClick={() => setMetric(m)}>
             {m}
-          </button>
+          </Button>
         ))}
       </div>
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
-          <CartesianGrid stroke="var(--line-soft)" strokeDasharray="3 3" />
-          <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--ink-soft)' }} />
-          <YAxis tick={{ fontSize: 11, fill: 'var(--ink-soft)' }}
-                 label={{ value: unit, angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: 'var(--ink-soft)' } }} />
-          <Tooltip contentStyle={{ fontFamily: 'var(--font-mono)', fontSize: 12, borderRadius: 8, border: '1px solid var(--line)' }} />
-          <Line type="monotone" dataKey="value" stroke="var(--action)" strokeWidth={2}
-                dot={{ r: 3, fill: 'var(--action)' }} isAnimationActive={false} name={metric} />
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} />
+          <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                 label={{ value: unit, angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: 'var(--muted-foreground)' } }} />
+          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }} />
+          <Line type="monotone" dataKey="value" stroke="var(--chart-1)" strokeWidth={2}
+                dot={{ r: 3, fill: 'var(--chart-1)' }} isAnimationActive={false} name={metric} />
         </LineChart>
       </ResponsiveContainer>
     </div>

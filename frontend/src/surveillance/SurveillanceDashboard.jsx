@@ -11,21 +11,22 @@ import ClusterMap from './ClusterMap';
 import AlertsFeed from './AlertsFeed';
 import CompliancePanel from './CompliancePanel';
 import { CONDITION_LABELS, conditionLabel } from '../lib/format';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../components/ui/select';
 
 const PROVINCES = ['Punjab', 'Sindh', 'KPK', 'Balochistan', 'Islamabad', 'Gilgit-Baltistan', 'AJK'];
 const CONDITIONS = ['leukemia', 'leukemia_with_thrombocytopenia', 'thrombocytopenia',
   'iron_deficiency_anemia', 'other_microcytic_anemia', 'macrocytic_anemia', 'beta_thal_trait'];
 
-const TABS = [
-  ['surveillance', 'Surveillance'],
-  ['alerts', 'Alerts'],
-  ['compliance', 'Compliance'],
-];
-
 export default function SurveillanceDashboard() {
   const [tab, setTab] = useState('surveillance');
   const [clusters, setClusters] = useState(null);
-  const [filters, setFilters] = useState({ province: '', condition: '' });
+  const [filters, setFilters] = useState({ province: '__all', condition: '__all' });
   const [mapMode, setMapMode] = useState('markers');
   const [openAlertCount, setOpenAlertCount] = useState(null);
   const [err, setErr] = useState('');
@@ -33,8 +34,8 @@ export default function SurveillanceDashboard() {
   const loadClusters = useCallback(async () => {
     setErr('');
     const qs = new URLSearchParams();
-    if (filters.province) qs.set('province', filters.province);
-    if (filters.condition) qs.set('condition', filters.condition);
+    if (filters.province !== '__all') qs.set('province', filters.province);
+    if (filters.condition !== '__all') qs.set('condition', filters.condition);
     try {
       setClusters(await api.get(`/nih/clusters?${qs.toString()}`));
     } catch (e) { setErr(e.message); setClusters([]); }
@@ -53,107 +54,120 @@ export default function SurveillanceDashboard() {
 
   return (
     <div>
-      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+      <div className="mb-4.5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="fh-eyebrow">National epidemiological intelligence</div>
-          <h1 style={{ fontSize: 24, marginTop: 4 }}>Surveillance Dashboard</h1>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {TABS.map(([id, label]) => (
-            <button key={id} className={`fh-btn ${tab === id ? 'fh-btn--primary' : 'fh-btn--ghost'}`}
-                    onClick={() => setTab(id)}>
-              {label}{id === 'alerts' && openAlertCount ? ` (${openAlertCount})` : ''}
-            </button>
-          ))}
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">National epidemiological intelligence</div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Surveillance Dashboard</h1>
         </div>
       </div>
 
-      {tab === 'surveillance' && (
-        <>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList variant="line">
+          <TabsTrigger value="surveillance">Surveillance</TabsTrigger>
+          <TabsTrigger value="alerts">Alerts{openAlertCount ? ` (${openAlertCount})` : ''}</TabsTrigger>
+          <TabsTrigger value="compliance">Compliance</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="surveillance" className="mt-4">
           {/* Summary stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 14, marginBottom: 16 }}>
+          <div className="mb-4 grid grid-cols-3 gap-3.5">
             {[['Predictions', stats.cases], ['High-risk cases', stats.highRisk], ['Districts reporting', stats.districts]].map(([label, val]) => (
-              <div key={label} className="fh-card"><div className="fh-card__body">
-                <div className="fh-muted" style={{ fontSize: 12 }}>{label}</div>
-                <div className="fh-num" style={{ fontSize: 28, color: 'var(--teal)' }}>{val}</div>
-              </div></div>
+              <Card key={label}>
+                <CardContent>
+                  <div className="text-xs text-muted-foreground">{label}</div>
+                  <div className="mt-1 font-mono text-[28px] tabular-nums text-primary">{val}</div>
+                </CardContent>
+              </Card>
             ))}
           </div>
 
-          <div className="fh-card">
-            <div className="fh-card__head">
-              <h3 style={{ fontSize: 15 }}>Prediction clusters</h3>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                <select className="fh-select" style={{ width: 'auto' }}
-                        value={filters.province} onChange={(e) => setFilters((f) => ({ ...f, province: e.target.value }))}>
-                  <option value="">All provinces</option>
-                  {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-                <select className="fh-select" style={{ width: 'auto' }}
-                        value={filters.condition} onChange={(e) => setFilters((f) => ({ ...f, condition: e.target.value }))}>
-                  <option value="">All conditions</option>
-                  {CONDITIONS.map((c) => <option key={c} value={c}>{CONDITION_LABELS[c] || c}</option>)}
-                </select>
-                <div style={{ display: 'flex', gap: 4 }}>
+          <Card>
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+              <CardTitle>Prediction clusters</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={filters.province} onValueChange={(v) => setFilters((f) => ({ ...f, province: v }))}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue>{(v) => (v === '__all' ? 'All provinces' : v)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all">All provinces</SelectItem>
+                    {PROVINCES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.condition} onValueChange={(v) => setFilters((f) => ({ ...f, condition: v }))}>
+                  <SelectTrigger className="w-[190px]">
+                    <SelectValue>{(v) => (v === '__all' ? 'All conditions' : (CONDITION_LABELS[v] || v))}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all">All conditions</SelectItem>
+                    {CONDITIONS.map((c) => <SelectItem key={c} value={c}>{CONDITION_LABELS[c] || c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <div className="flex gap-1">
                   {['markers', 'heat'].map((m) => (
-                    <button key={m} className={`fh-btn ${m === mapMode ? 'fh-btn--primary' : 'fh-btn--ghost'}`}
-                            style={{ padding: '6px 12px', textTransform: 'capitalize' }}
-                            onClick={() => setMapMode(m)}>{m}</button>
+                    <Button key={m} size="sm" variant={m === mapMode ? 'default' : 'outline'}
+                            className="capitalize" onClick={() => setMapMode(m)}>{m}</Button>
                   ))}
                 </div>
               </div>
-            </div>
-            <div className="fh-card__body">
-              {err && <p className="fh-error">{err}</p>}
+            </CardHeader>
+            <CardContent>
+              {err && <p className="mb-2 text-sm text-destructive">{err}</p>}
               {clusters == null
-                ? <p className="fh-muted">Loading map…</p>
+                ? <p className="text-sm text-muted-foreground">Loading map…</p>
                 : <ClusterMap clusters={clusters} mode={mapMode} />}
-              <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 12, color: 'var(--ink-soft)' }}>
-                <span><span style={{ color: '#0E7C7B' }}>●</span> cluster (marker size ∝ cases)</span>
-                <span><span style={{ color: '#B4453C' }}>●</span> contains high-risk cases</span>
+              <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
+                <span><span className="text-primary">●</span> cluster (marker size ∝ cases)</span>
+                <span><span className="text-destructive">●</span> contains high-risk cases</span>
               </div>
 
               {/* Cluster table */}
               {clusters?.length > 0 && (
-                <div style={{ overflowX: 'auto', marginTop: 16 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead><tr style={{ color: 'var(--ink-soft)', textAlign: 'left' }}>
-                      <th style={{ padding: '6px 8px' }}>District</th>
-                      <th style={{ padding: '6px 8px' }}>Condition</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Cases</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>High-risk</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>Avg conf.</th>
-                    </tr></thead>
-                    <tbody>
-                      {clusters.map((c, i) => (
-                        <tr key={i} style={{ borderTop: '1px solid var(--line-soft)' }}>
-                          <td style={{ padding: '6px 8px' }}>{c.district || '—'}</td>
-                          <td style={{ padding: '6px 8px' }}>{conditionLabel(c.condition)}</td>
-                          <td className="fh-num" style={{ padding: '6px 8px', textAlign: 'right' }}>{Number(c.case_count)}</td>
-                          <td className="fh-num" style={{ padding: '6px 8px', textAlign: 'right', color: Number(c.high_risk_count) ? 'var(--risk)' : 'inherit' }}>{Number(c.high_risk_count)}</td>
-                          <td className="fh-num" style={{ padding: '6px 8px', textAlign: 'right' }}>{Math.round(Number(c.avg_confidence) * 100)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Table className="mt-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>District</TableHead>
+                      <TableHead>Condition</TableHead>
+                      <TableHead className="text-right">Cases</TableHead>
+                      <TableHead className="text-right">High-risk</TableHead>
+                      <TableHead className="text-right">Avg conf.</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {clusters.map((c, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{c.district || '—'}</TableCell>
+                        <TableCell>{conditionLabel(c.condition)}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{Number(c.case_count)}</TableCell>
+                        <TableCell className={`text-right font-mono tabular-nums ${Number(c.high_risk_count) ? 'text-destructive' : ''}`}>
+                          {Number(c.high_risk_count)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{Math.round(Number(c.avg_confidence) * 100)}%</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
-            </div>
-          </div>
-        </>
-      )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {tab === 'alerts' && (
-        <div className="fh-card"><div className="fh-card__body">
-          <AlertsFeed onData={(rows) => setOpenAlertCount(rows.filter((a) => a.status === 'open').length)} />
-        </div></div>
-      )}
+        <TabsContent value="alerts" className="mt-4">
+          <Card>
+            <CardContent>
+              <AlertsFeed onData={(rows) => setOpenAlertCount(rows.filter((a) => a.status === 'open').length)} />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {tab === 'compliance' && (
-        <div className="fh-card"><div className="fh-card__body">
-          <CompliancePanel />
-        </div></div>
-      )}
+        <TabsContent value="compliance" className="mt-4">
+          <Card>
+            <CardContent>
+              <CompliancePanel />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

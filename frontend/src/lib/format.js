@@ -27,10 +27,11 @@ export function pct(x) {
   return `${Math.round(x * 100)}%`;
 }
 
-// Confidence -> one of the 5 teal scale steps (see --c-1..--c-5).
+// Confidence -> a teal intensity step, blended from the brand primary token.
 export function confColor(x) {
   const step = Math.min(5, Math.max(1, Math.ceil((x || 0) * 5)));
-  return `var(--c-${step})`;
+  const opacityByStep = { 1: 28, 2: 45, 3: 62, 4: 80, 5: 100 };
+  return `color-mix(in oklch, var(--primary) ${opacityByStep[step]}%, var(--background))`;
 }
 
 // The 14 CBC fields Model A uses, with units + a reasonable numeric step.

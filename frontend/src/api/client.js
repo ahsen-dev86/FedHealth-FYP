@@ -31,19 +31,25 @@ function authHeaders(extra = {}) {
   return { ...(t ? { Authorization: `Bearer ${t}` } : {}), ...extra };
 }
 
-export const api = {
-  get: (path) =>
-    fetch(`${BASE}${path}`, { headers: authHeaders() }).then(handle),
-
-  post: (path, body, token) =>
+function jsonRequest(method) {
+  return (path, body, token) =>
     fetch(`${BASE}${path}`, {
-      method: 'POST',
+      method,
       headers: authHeaders({
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       }),
       body: JSON.stringify(body || {}),
-    }).then(handle),
+    }).then(handle);
+}
+
+export const api = {
+  get: (path) =>
+    fetch(`${BASE}${path}`, { headers: authHeaders() }).then(handle),
+
+  post: jsonRequest('POST'),
+  put: jsonRequest('PUT'),
+  patch: jsonRequest('PATCH'),
 
   // multipart upload (OCR image). Do NOT set Content-Type; the browser adds the
   // multipart boundary automatically.

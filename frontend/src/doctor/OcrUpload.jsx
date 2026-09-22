@@ -3,7 +3,9 @@
 // returns extracted CBC values, which we merge into the form. Extraction is
 // best-effort — the doctor reviews the filled fields before predicting.
 import { useRef, useState } from 'react';
+import { ScanLine, AlertCircle } from 'lucide-react';
 import { api } from '../api/client';
+import { Button } from '../components/ui/button';
 
 export default function OcrUpload({ onExtract }) {
   const inputRef = useRef(null);
@@ -34,12 +36,16 @@ export default function OcrUpload({ onExtract }) {
   return (
     <div>
       <input ref={inputRef} type="file" accept="image/*" hidden onChange={handle} />
-      <button className="fh-btn fh-btn--ghost" disabled={busy}
-              onClick={() => inputRef.current?.click()}>
+      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
+        <ScanLine />
         {busy ? 'Reading report…' : 'Scan paper report (OCR)'}
-      </button>
-      {msg && <p className="fh-muted" style={{ marginTop: 8 }}>{msg}</p>}
-      {err && <p className="fh-error" style={{ marginTop: 8 }}>{err}</p>}
+      </Button>
+      {msg && <p className="mt-2 text-xs text-muted-foreground">{msg}</p>}
+      {err && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
+          <AlertCircle className="size-3.5" /> {err}
+        </p>
+      )}
     </div>
   );
 }

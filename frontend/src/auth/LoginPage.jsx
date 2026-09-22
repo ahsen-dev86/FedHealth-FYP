@@ -4,7 +4,24 @@
 // MFA is mandatory, per the backend).
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
 import { useAuth } from './AuthContext';
+import { Card, CardContent } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Button } from '../components/ui/button';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Separator } from '../components/ui/separator';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../components/ui/select';
+
+const ROLES = [
+  { value: 'doctor', label: 'Doctor' },
+  { value: 'lab_tech', label: 'Lab technician' },
+  { value: 'nih_official', label: 'Health official (gov email required)' },
+  { value: 'ngo', label: 'NGO / foundation' },
+];
 
 export default function LoginPage() {
   const { login, register } = useAuth();
@@ -44,65 +61,75 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="fh-auth">
-      <div className="fh-auth__card fh-card">
-        <div className="fh-card__body">
-          <div className="fh-auth__brand">
-            <div className="fh-brand">Fed<span>Health</span></div>
-            <p>Clinical decision support · CBC intelligence</p>
+    <div className="grid min-h-full place-items-center bg-[radial-gradient(1200px_600px_at_50%_-10%,color-mix(in_oklch,var(--primary),white_85%)_0%,var(--background)_60%)] p-6">
+      <Card className="w-full max-w-[400px]">
+        <CardContent className="pt-2">
+          <div className="mb-6 text-center">
+            <div className="text-[26px] font-bold tracking-tight text-foreground">
+              Fed<span className="text-primary">Health</span>
+            </div>
+            <p className="mt-1.5 text-sm text-muted-foreground">Clinical decision support · CBC intelligence</p>
           </div>
 
-          {error && <div className="fh-error" style={{ marginBottom: 14 }}>{error}</div>}
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-          <form onSubmit={submit}>
+          <form onSubmit={submit} className="space-y-3.5">
             {mode === 'register' && (
-              <div className="fh-field">
-                <label className="fh-label">Full name</label>
-                <input className="fh-input" value={form.fullName} onChange={set('fullName')} required />
+              <div className="space-y-1.5">
+                <Label htmlFor="fullName">Full name</Label>
+                <Input id="fullName" value={form.fullName} onChange={set('fullName')} required />
               </div>
             )}
-            <div className="fh-field">
-              <label className="fh-label">Email</label>
-              <input className="fh-input" type="email" value={form.email} onChange={set('email')} required
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" value={form.email} onChange={set('email')} required
                      autoComplete="email" />
             </div>
-            <div className="fh-field">
-              <label className="fh-label">Password</label>
-              <input className="fh-input" type="password" value={form.password} onChange={set('password')} required
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Password</Label>
+              <Input id="password" type="password" value={form.password} onChange={set('password')} required
                      autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
             </div>
             {mode === 'register' && (
               <>
-                <div className="fh-field">
-                  <label className="fh-label">Role</label>
-                  <select className="fh-select" value={form.role} onChange={set('role')}>
-                    <option value="doctor">Doctor</option>
-                    <option value="lab_tech">Lab technician</option>
-                    <option value="nih_official">Health official (gov email required)</option>
-                  </select>
+                <div className="space-y-1.5">
+                  <Label>Role</Label>
+                  <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>{(v) => ROLES.find((r) => r.value === v)?.label || v}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="fh-field">
-                  <label className="fh-label">Organization <span className="fh-muted">(optional)</span></label>
-                  <input className="fh-input" value={form.organization} onChange={set('organization')} />
+                <div className="space-y-1.5">
+                  <Label htmlFor="organization">Organization <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input id="organization" value={form.organization} onChange={set('organization')} />
                 </div>
               </>
             )}
 
-            <button className="fh-btn fh-btn--primary" style={{ width: '100%' }} disabled={busy}>
+            <Button type="submit" className="w-full" disabled={busy}>
               {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
-            </button>
+            </Button>
           </form>
 
-          <hr className="fh-hr" />
-          <p className="fh-muted" style={{ textAlign: 'center', margin: 0 }}>
-            {mode === 'login' ? "New here? " : 'Have an account? '}
-            <button className="fh-btn fh-btn--ghost" style={{ padding: '4px 10px' }}
+          <Separator className="my-4" />
+          <p className="m-0 text-center text-sm text-muted-foreground">
+            {mode === 'login' ? 'New here? ' : 'Have an account? '}
+            <Button variant="ghost" size="sm" className="px-2.5"
                     onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>
               {mode === 'login' ? 'Register' : 'Sign in'}
-            </button>
+            </Button>
           </p>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

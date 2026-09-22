@@ -3,6 +3,9 @@
 // inference service returns alongside the ML scores. It's a transparent second
 // opinion (Mentzer index etc.), shown as a clinical note — never a diagnosis.
 import { useState } from 'react';
+import { TriangleAlert, CircleCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { Button } from './ui/button';
 
 export default function RuleFlag({ flag }) {
   const [open, setOpen] = useState(false);
@@ -10,49 +13,45 @@ export default function RuleFlag({ flag }) {
 
   const applicable = flag.applicable;
   const fired = flag.flag;
-  const cls = fired ? 'fh-flag fh-flag--warn' : 'fh-flag fh-flag--ok';
-  const titleCls = fired ? 'fh-flag__title fh-flag__title--warn' : 'fh-flag__title';
 
   return (
-    <div className={cls} style={{ flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-        <div>
-          <div className={titleCls}>
+    <Alert variant={fired ? 'destructive' : 'default'} className={fired ? 'border-warning/40 text-warning [&_*]:text-warning' : 'border-success/30'}>
+      {fired ? <TriangleAlert /> : <CircleCheck className="text-success" />}
+      <div className="flex w-full items-start justify-between gap-3">
+        <div className="min-w-0">
+          <AlertTitle className={fired ? '' : 'text-foreground'}>
             {fired ? 'Possible beta-thalassemia trait' : 'Thalassemia-trait screen'}
-          </div>
-          <div className="fh-flag__body">{flag.rationale}</div>
+          </AlertTitle>
+          <AlertDescription className={fired ? 'text-warning/85' : ''}>{flag.rationale}</AlertDescription>
         </div>
         {flag.mentzer_index != null && (
-          <div style={{ textAlign: 'right', minWidth: 92 }}>
-            <div className="fh-muted" style={{ fontSize: 11 }}>Mentzer index</div>
-            <div className="fh-num" style={{ fontSize: 18, color: fired ? 'var(--warn)' : 'var(--ink)' }}>
-              {flag.mentzer_index}
-            </div>
+          <div className="shrink-0 text-right">
+            <div className="text-[11px] text-muted-foreground">Mentzer index</div>
+            <div className="font-mono text-lg tabular-nums">{flag.mentzer_index}</div>
           </div>
         )}
       </div>
 
       {applicable && flag.indices && (
-        <>
-          <button className="fh-btn fh-btn--ghost" style={{ padding: '4px 10px', marginTop: 8, alignSelf: 'flex-start' }}
-                  onClick={() => setOpen((v) => !v)}>
+        <div className="col-start-2 mt-2 w-full">
+          <Button type="button" variant="ghost" size="sm" className="px-2" onClick={() => setOpen((v) => !v)}>
+            {open ? <ChevronUp /> : <ChevronDown />}
             {open ? 'Hide' : 'Show'} discriminant indices
-          </button>
+          </Button>
           {open && (
-            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 6, width: '100%' }}>
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {Object.entries(flag.indices).map(([name, d]) => (
-                <div key={name} style={{ fontSize: 12, display: 'flex', justifyContent: 'space-between',
-                                         padding: '5px 8px', background: '#fff', border: '1px solid var(--line)', borderRadius: 6 }}>
-                  <span style={{ textTransform: 'capitalize' }}>{name.replace(/_/g, ' ')}</span>
-                  <span className="fh-num" style={{ color: d.thal_suggestive ? 'var(--warn)' : 'var(--ink-soft)' }}>
+                <div key={name} className="flex items-center justify-between rounded-md border border-border bg-card px-2 py-1.5 text-xs">
+                  <span className="capitalize text-muted-foreground">{name.replace(/_/g, ' ')}</span>
+                  <span className={`font-mono tabular-nums ${d.thal_suggestive ? 'text-warning' : 'text-foreground'}`}>
                     {d.value}
                   </span>
                 </div>
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
-    </div>
+    </Alert>
   );
 }

@@ -14,7 +14,7 @@ const registerSchema = z.object({
   email,
   password,
   fullName: z.string().min(2).max(120),
-  role: z.enum(['doctor', 'lab_tech', 'nih_official']),
+  role: z.enum(['doctor', 'lab_tech', 'nih_official', 'ngo']),
   organization: z.string().max(160).optional(),
   labId: z.string().uuid().optional(),
 });
