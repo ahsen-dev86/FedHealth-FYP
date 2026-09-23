@@ -1,23 +1,13 @@
 import sys
 import unittest
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 
 MODULE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MODULE_DIR))
-
-# Keep this unit test independent from sklearn/scipy and TensorFlow. The real
-# saved Keras artifact is validated in the Colab integration run.
-fake_package = ModuleType("fedhealth_ml")
-fake_package.schema = SimpleNamespace(
-    MODEL_A_FEATURES=[f"feature-{i}" for i in range(14)],
-    MODEL_A_CLASSES=[f"class-{i}" for i in range(9)],
-)
-fake_package.preprocess = SimpleNamespace()
-sys.modules["fedhealth_ml"] = fake_package
 
 import task  # noqa: E402
 
