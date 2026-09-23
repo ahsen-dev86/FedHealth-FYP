@@ -22,7 +22,8 @@ from server import load_certificates  # noqa: E402
 from validation import ValidationTracker  # noqa: E402
 import client  # noqa: E402
 from final_evaluate import final_evaluate  # noqa: E402
-from run_experiments import summarize  # noqa: E402
+from run_experiments import (summarize, integration_status,
+                             federation_progress)  # noqa: E402
 
 
 class AggregationTests(unittest.TestCase):
@@ -125,6 +126,15 @@ class SplitAndUnitsTests(unittest.TestCase):
                         self.assertFalse(ids & other, (a, b))
             self.assertEqual(sum(v["rows"] for v in one["files"].values()),
                              len(pd.read_csv(csv_path)))
+            self.assertEqual(one["reference_folds"], 3)
+            self.assertGreaterEqual(one["files"]["reference"]["rows"], 290)
+            self.assertGreaterEqual(min(one["files"]["reference"]["classes"].values()), 3)
+            self.assertEqual(one["source_audit"]["rows_in_duplicate_feature_groups"], 92)
+            self.assertEqual(one["source_audit"]["conflicting_label_groups"], 0)
+            old_reference = Path(directory) / "old_reference"
+            with self.assertRaisesRegex(ValueError, "No grouped fold has at least 3"):
+                make_splits(csv_path, old_reference, seed=42, reference_folds=5)
+            self.assertFalse(old_reference.exists())
             with self.assertRaises(FileExistsError):
                 make_splits(csv_path, first, seed=42)
 
@@ -183,6 +193,31 @@ class ValidationAndSecurityTests(unittest.TestCase):
         summary = summarize(rows)["local"]["scores"]["macro_f1"]
         self.assertEqual(summary["mean"], 4.0)
         self.assertAlmostEqual(summary["std"], np.sqrt(8.0))
+
+    def test_round_zero_cannot_be_reported_as_federated_candidate(self):
+        row = {"method": "warm_fedavg", "seed": 42, "selected_round": 0}
+        self.assertFalse(integration_status([row])["contains_federated_updates"])
+        self.assertEqual(integration_status([row])["status"],
+                         "reference_ann_only_no_federated_round_selected")
+        row["selected_round"] = 1
+        self.assertTrue(integration_status([row])["contains_federated_updates"])
+
+    def test_experiment_report_separates_selected_and_final_round(self):
+        def record(round_number, accuracy):
+            return {"round": round_number, "per_class_support": [2, 2],
+                    "per_class_recall": [accuracy, accuracy],
+                    **{score: accuracy for score in (
+                        "accuracy", "balanced_accuracy", "macro_f1",
+                        "weighted_f1", "log_loss", "sick_called_healthy")}}
+        info = {"trained_rounds": 2,
+                "round_validation": [record(0, 0.5), record(1, 0.75),
+                                     record(2, 0.25)],
+                "selected_validation_metrics": record(1, 0.75),
+                "selected_model_contains_federated_updates": True}
+        progress = federation_progress(info)
+        self.assertEqual(progress["before_federation"]["round"], 0)
+        self.assertEqual(progress["selected"]["round"], 1)
+        self.assertEqual(progress["last_trained_round"]["round"], 2)
 
     def test_lab_fit_uses_fresh_model_each_round(self):
         lab = client.LabClient.__new__(client.LabClient)

@@ -87,6 +87,36 @@ def summarize(rows):
     return summary
 
 
+def integration_status(rows, seed=42):
+    """Describe the predeclared candidate without calling round zero federated."""
+    candidates = [row for row in rows if row["method"] == "warm_fedavg"
+                  and row["seed"] == seed]
+    if len(candidates) != 1:
+        raise ValueError("Expected exactly one warm FedAvg integration candidate")
+    selected_round = int(candidates[0]["selected_round"])
+    return {"selected_round": selected_round,
+            "contains_federated_updates": selected_round > 0,
+            "status": "federated_ann" if selected_round > 0
+                      else "reference_ann_only_no_federated_round_selected"}
+
+
+def federation_progress(run_info):
+    """Expose the same validation metrics before, at selection and at the end."""
+    history = run_info["round_validation"]
+    if history[0]["round"] != 0 or history[-1]["round"] != run_info["trained_rounds"]:
+        raise ValueError("Federation validation history is incomplete")
+    def view(record):
+        return {"round": int(record["round"]),
+                **{score: record[score] for score in SCORES},
+                "per_class_support": record["per_class_support"],
+                "per_class_recall": record["per_class_recall"]}
+    return {"before_federation": view(history[0]),
+            "selected": view(run_info["selected_validation_metrics"]),
+            "last_trained_round": view(history[-1]),
+            "selected_model_contains_federated_updates":
+            bool(run_info["selected_model_contains_federated_updates"])}
+
+
 def run_experiments(split_dir, output_dir, *,
                     seeds=(42, 52, 62), rounds=20, local_epochs=1,
                     reference_epochs=100, reference_patience=10,
@@ -100,6 +130,7 @@ def run_experiments(split_dir, output_dir, *,
     split = load_split_manifest(split_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
     rows = []
+    progress = {}
     for seed in seeds:
         reference_dir = output_dir / f"reference_seed{seed}"
         subprocess.run([
@@ -129,6 +160,7 @@ def run_experiments(split_dir, output_dir, *,
             ], check=True)
             info = json.loads((model_dir / "manifest.json").read_text(
                 encoding="utf-8"))["run_info"]
+            progress[f"{method}_seed{seed}"] = federation_progress(info)
             rows.append(_row(method, seed, info["selected_validation_metrics"],
                              info["selected_round"]))
         for index, (name, data) in enumerate(local_data):
@@ -153,17 +185,25 @@ def run_experiments(split_dir, output_dir, *,
         "purpose": "module4_validation_only_comparison",
         "integration_candidate": "warm_fedavg_seed42",
         "integration_seed_predeclared": 42,
+        "integration_candidate_result": integration_status(rows),
         "settings": {"seeds": list(seeds), "rounds": rounds,
                      "local_epochs": local_epochs,
                      "reference_epochs": reference_epochs,
                      "reference_patience": reference_patience,
                      "split_seed": split["split_seed"],
                      "dirichlet_alpha": split["dirichlet_alpha"],
+                     "reference_folds": split.get("reference_folds", 5),
+                     "reference_rows": split["files"]["reference"]["rows"],
+                     "lab_source_rows": sum(
+                         split["files"][f"lab_{i:02d}"]["rows"]
+                         for i in range(split["labs"])),
                      "max_macro_f1_drop": max_macro_f1_drop,
                      "max_extra_sick_healthy": max_extra_sick_healthy},
         "comparison_note": "Centralized is a comparator, not a guaranteed upper bound. "
                            "Local-only rows are separate models per lab.",
-        "summary": summarize(rows), "versions": package_versions(),
+        "summary": summarize(rows),
+        "federation_progress_on_validation": progress,
+        "versions": package_versions(),
     }
     (output_dir / "results.json").write_text(json.dumps(report, indent=2),
                                               encoding="utf-8")

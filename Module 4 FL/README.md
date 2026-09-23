@@ -68,17 +68,24 @@ requires a new split and new model results.
 ```bash
 python "Module 4 FL/make_splits.py" \
   --csv anemia_diagnosed_cbc_data_v4.csv \
-  --out /new/path/module4_split --labs 3 --alpha 0.5 --seed 42
+  --out /new/path/module4_split --labs 3 --alpha 0.5 --seed 42 \
+  --reference-folds 3 --min-reference-per-class 3
 ```
 
 Rows with the same cleaned 14-feature CBC vector stay together even if labels
 conflict. Without patient IDs, this prevents identical-row leakage but cannot
 prove that two different rows did not come from the same patient. The tool
 reserves about 20% for test and 10% for validation. Of the
-remaining training rows, about 20% become the reference slice and 80% become
-three non-IID lab shards. Exact counts can differ because groups cannot be
-split. `split_manifest.json` records the class counts, Dirichlet alpha, seed and
-SHA-256 of every file. **Keep this split fixed for all experiment seeds.**
+remaining training rows, about one-third become the reference slice and
+two-thirds become three non-IID lab shards. On the supplied CSV this gives
+roughly 300 reference rows; the previous one-fifth split gave the starting
+ANN only one example of the rarest class. The tool rejects a split that has
+fewer than three reference rows for any class. Exact counts differ because
+groups cannot be split. `split_manifest.json` records class counts, duplicate
+groups, actual row counts, Dirichlet alpha, seed and SHA-256 of every file.
+**Keep this split fixed for all experiment seeds.** Even this revised split has
+only one or two examples of the rarest class in validation and test. Report
+the class counts; one split cannot establish reliable rare-disease performance.
 This is a simulation made from one central CSV; it is not evidence that several
 real laboratories kept their source data private.
 
@@ -132,6 +139,11 @@ comparator, not a guaranteed upper bound. The full run uses validation only.
 It writes `results.csv`, `results.json`, seed-specific reference artifacts and
 federated ANN checkpoints. Scores are reported as mean and sample standard
 deviation across seeds. Each local-only lab has its own result row.
+`results.json` also lists validation accuracy, balanced accuracy, macro-F1,
+weighted-F1, log loss, sick-called-Healthy errors and per-class support and
+recall **before federation, at the selected round and after the last round**.
+It explicitly marks whether the seed-42 integration candidate contains any
+federated updates. A round-0 selection is still only the reference ANN.
 
 All 20 rounds run. Among rounds meeting the **predeclared** safety rules, the
 lowest validation log loss wins. By default a round may lose at most 0.05

@@ -5,6 +5,18 @@ the notebooks, the Flower FL clients (Module 4), and the inference service
 (Module 6) lives in the importable `fedhealth_ml` package, so all tiers turn a
 raw CBC into the *identical* model input.
 
+**Current-dataset evaluation notice:** the original notebook split is
+row-stratified, not duplicate-aware. On the supplied 1,281-row CBC CSV, 92
+rows belong to duplicate-feature groups, and identical CBCs crossed the old
+train/validation/test boundaries. Previous Module 3 scores and its saved
+`ann.keras` remain useful for reproducing that run, but they are not an
+independent estimate for new patients. For a fresh evaluation on this same
+CSV, use the duplicate-aware split and new reference ANN in
+`Module 4 FL/make_splits.py` and `train_reference.py`; do not reuse the old
+ANN or preprocessor with that split. The CSV has no patient IDs, so even this
+new split only rules out identical-feature overlap, not repeat visits from the
+same patient.
+
 ## Layout
 ```
 ml/
@@ -27,8 +39,10 @@ ml/
 **Model A — `cbc_multiclass`** (works today). Trained on the cleaned anemia CBC
 dataset, which already contains real *Leukemia* and *Healthy* rows. Outputs a
 calibrated per-condition confidence vector over 9 classes (anemia subtypes,
-leukemia, thrombocytopenia, healthy). Validated proxy performance on your data:
-macro-F1 ≈ 0.88, Healthy recall ≈ 0.96. Never emits a categorical label — the
+leukemia, thrombocytopenia, healthy). The old proxy run reported macro-F1
+about 0.88 and Healthy recall about 0.96; because the split did not keep
+duplicate CBCs together, those are historical diagnostics, not a clean
+generalization claim. Never emits a categorical label — the
 doctor confirms.
 
 **Model B — `thal_screen`** (beta-thalassemia trait). The original alpha-carrier
@@ -60,8 +74,9 @@ guard** that stops you training if the sourced dataset lacks signal.
 ## Artifacts produced (consumed by later modules)
 Per model, in `/content/artifacts/<model>/`:
 `preprocessor.joblib`, `ann.keras`, `xgb.json`, `meta.json`, `metrics.json`.
-- Module 4 (Flower) loads `preprocessor.joblib` + the ANN and federates
-  `models.get_ann_weights(ann)`.
+- Module 4 (Flower) can load these files for an exact legacy fine-tuning
+  diagnostic. Its clean current-dataset experiment trains a new disjoint
+  reference ANN and preprocessor before federating the ANN weights.
 - Module 6 (inference) loads all artifacts to serve calibrated confidence scores
   and calls `rules.thalassemia_trait_flag` for the interpretable flag.
 - `metrics.json` (per-class recall / macro-F1) is registered into `ml_models` —

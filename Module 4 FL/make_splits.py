@@ -16,8 +16,8 @@ def file_sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def _choose_fold(df, groups, fraction, seed):
-    """Choose the stratified group fold closest to the requested row fraction."""
+def _choose_fold(df, groups, fraction, seed, min_per_class=1):
+    """Choose a stratified group fold with sufficient class coverage."""
     folds = round(1 / fraction)
     labels = df["Diagnosis"].map(schema.ANEMIA_LABEL_MAP).to_numpy()
     if pd.isna(labels).any():
@@ -27,11 +27,19 @@ def _choose_fold(df, groups, fraction, seed):
     overall = pd.Series(labels).value_counts(normalize=True)
     candidates = []
     for train, held in splitter.split(df, labels, groups):
+        held_counts = pd.Series(labels[held]).value_counts()
+        if any(held_counts.get(label, 0) < min_per_class
+               for label in overall.index):
+            continue
         held_mix = pd.Series(labels[held]).value_counts(normalize=True)
         class_difference = sum(abs(held_mix.get(c, 0) - p)
                                for c, p in overall.items())
         score = abs(len(held) / len(df) - fraction) + class_difference * 0.1
         candidates.append((score, train, held))
+    if not candidates:
+        raise ValueError(f"No grouped fold has at least {min_per_class} "
+                         "rows of every class; use fewer reference folds, "
+                         "obtain more data, or lower the declared minimum")
     _, train, held = min(candidates, key=lambda item: item[0])
     return df.iloc[train].reset_index(drop=True), df.iloc[held].reset_index(drop=True)
 
@@ -43,13 +51,19 @@ def _write_csv(df, path):
                         df["Diagnosis"].value_counts().items()}}
 
 
-def make_splits(csv_path, output_dir, *, labs=3, alpha=0.5, seed=42):
-    """Hold out 20% test, 10% validation, then 20% of remainder as reference."""
+def make_splits(csv_path, output_dir, *, labs=3, alpha=0.5, seed=42,
+                reference_folds=3, min_reference_per_class=3):
+    """Hold out 20% test, 10% validation, then 1/N of training as reference.
+
+    The default N=3 gives the starting ANN about 300 rows on the supplied
+    1,281-row CSV; the old N=5 left only one rarest-class reference row.
+    """
     csv_path, output_dir = Path(csv_path).resolve(), Path(output_dir).resolve()
     if output_dir.exists():
         raise FileExistsError(f"Refusing to overwrite: {output_dir}")
-    if labs < 2 or alpha <= 0:
-        raise ValueError("labs must be >= 2 and alpha must be positive")
+    if labs < 2 or alpha <= 0 or reference_folds < 2 or min_reference_per_class < 1:
+        raise ValueError("labs and reference_folds must be >= 2; alpha and "
+                         "min_reference_per_class must be positive")
     raw = pd.read_csv(csv_path)
     if not set(schema.MODEL_A_FEATURES + ["Diagnosis"]).issubset(raw.columns):
         raise ValueError("CSV does not have the Model A feature and label columns")
@@ -58,11 +72,27 @@ def make_splits(csv_path, output_dir, *, labs=3, alpha=0.5, seed=42):
     if len(cleaned) != len(raw) or labels.isna().any():
         raise ValueError("Canonical data failed Module 3 cleaning")
     test_groups = feature_group_ids(raw)
+    group_audit = pd.DataFrame({"group": test_groups,
+                                "label": raw["Diagnosis"]}).groupby("group").agg(
+        rows=("label", "size"), labels=("label", "nunique"))
     remainder, test = _choose_fold(raw, test_groups, 0.20, seed)
     remain_groups = feature_group_ids(remainder)
     train, validation = _choose_fold(remainder, remain_groups, 0.125, seed + 1)
     train_groups = feature_group_ids(train)
-    labs_source, reference = _choose_fold(train, train_groups, 0.20, seed + 2)
+    labs_source, reference = _choose_fold(
+        train, train_groups, 1.0 / reference_folds, seed + 2,
+        min_per_class=min_reference_per_class)
+    expected_classes = set(raw["Diagnosis"])
+    for name, frame, minimum in (("reference", reference, min_reference_per_class),
+                                  ("labs combined", labs_source, 1),
+                                  ("validation", validation, 1),
+                                  ("locked test", test, 1)):
+        counts = frame["Diagnosis"].value_counts()
+        short = {label: int(counts.get(label, 0)) for label in expected_classes
+                 if counts.get(label, 0) < minimum}
+        if short:
+            raise ValueError(f"{name} lacks class coverage (minimum {minimum} "
+                             f"rows per class): {dict(sorted(short.items()))}")
     lab_shards = partition_dataframe(labs_source, labs, mode="non_iid",
                                       alpha=alpha, seed=seed)
 
@@ -102,7 +132,25 @@ def make_splits(csv_path, output_dir, *, labs=3, alpha=0.5, seed=42):
         "split_seed": int(seed), "labs": int(labs), "mode": "non_iid",
         "dirichlet_alpha": float(alpha),
         "target_fractions": {"test_total": 0.20, "validation_total": 0.10,
-                             "reference_of_remaining_training": 0.20},
+                             "reference_of_remaining_training":
+                             1.0 / reference_folds},
+        "reference_folds": int(reference_folds),
+        "min_reference_per_class": int(min_reference_per_class),
+        "actual_rows": {name: int(len(frame)) for name, frame in named.items()},
+        "source_audit": {
+            "rows": int(len(raw)),
+            "class_counts": {str(k): int(v) for k, v in
+                             raw["Diagnosis"].value_counts().items()},
+            "duplicate_feature_groups": int((group_audit["rows"] > 1).sum()),
+            "rows_in_duplicate_feature_groups": int(group_audit.loc[
+                group_audit["rows"] > 1, "rows"].sum()),
+            "conflicting_label_groups": int((group_audit["labels"] > 1).sum()),
+            "rows_with_missing_after_cleaning": int(cleaned.isna().any(axis=1).sum()),
+            "patient_ids_available": False,
+        },
+        "evaluation_limit": "Rare classes have very small validation/test "
+                            "support; report per-class counts and avoid "
+                            "treating one split as a precise clinical estimate.",
         "grouping": "SHA-256 of Module 3 cleaned Model A feature vector; labels ignored",
         "files": files,
     }
@@ -118,9 +166,14 @@ def main():
     parser.add_argument("--labs", type=int, default=3)
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--reference-folds", type=int, default=3,
+                        help="reserve roughly 1/N of training for the starting ANN")
+    parser.add_argument("--min-reference-per-class", type=int, default=3)
     args = parser.parse_args()
     result = make_splits(args.csv, args.out, labs=args.labs,
-                         alpha=args.alpha, seed=args.seed)
+                         alpha=args.alpha, seed=args.seed,
+                         reference_folds=args.reference_folds,
+                         min_reference_per_class=args.min_reference_per_class)
     print(json.dumps(result, indent=2))
 
 
