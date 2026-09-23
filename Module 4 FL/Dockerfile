@@ -7,8 +7,8 @@ COPY ["Module 3 ML/schema.py", "Module 3 ML/preprocess.py", "Module 3 ML/models.
 COPY ["Module 4 FL/", "/app/module4/"]
 WORKDIR /app/module4
 ENV PYTHONPATH=/app/module4
-ENV FL_BIND=0.0.0.0:8080 FL_ROUNDS=5 FL_LABS=3 LOCAL_EPOCHS=2
-ENV PREPROCESSOR=/artifacts/preprocessor.joblib INITIAL_MODEL=/artifacts/ann.keras
-VOLUME ["/artifacts", "/output"]
+ENV FL_BIND=0.0.0.0:8080 FL_ROUNDS=20 FL_LABS=3 LOCAL_EPOCHS=1
+ENV FL_CA_CERT=/certs/ca.crt FL_SERVER_CERT=/certs/server.crt FL_SERVER_KEY=/certs/server.key
+VOLUME ["/artifacts", "/certs", "/output"]
 EXPOSE 8080
-CMD ["python", "server.py", "--output-dir", "/output/federated_ann"]
+CMD ["python", "server.py", "--reference-dir", "/artifacts/reference", "--split-manifest", "/artifacts/split_manifest.json", "--validation-csv", "/artifacts/validation.csv", "--output-dir", "/output/federated_ann"]

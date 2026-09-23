@@ -7,7 +7,8 @@ COPY ["Module 3 ML/schema.py", "Module 3 ML/preprocess.py", "Module 3 ML/models.
 COPY ["Module 4 FL/", "/app/module4/"]
 WORKDIR /app/module4
 ENV PYTHONPATH=/app/module4
-ENV FL_SERVER=fl-server:8080 LAB_ID=lab-00 LOCAL_EPOCHS=2
-ENV SHARD_CSV=/data/lab_00.csv PREPROCESSOR=/artifacts/preprocessor.joblib
-VOLUME ["/artifacts", "/data"]
+ENV FL_SERVER=fl-server:8080 LAB_ID=lab-00 LOCAL_EPOCHS=1 FL_CANONICAL_UNITS=1
+ENV SHARD_CSV=/data/lab_00.csv PREPROCESSOR=/artifacts/reference/preprocessor.joblib
+ENV FL_CA_CERT=/certs/ca.crt
+VOLUME ["/artifacts", "/data", "/certs"]
 CMD ["python", "client.py"]
