@@ -127,12 +127,16 @@ class SplitAndUnitsTests(unittest.TestCase):
             self.assertEqual(sum(v["rows"] for v in one["files"].values()),
                              len(pd.read_csv(csv_path)))
             self.assertEqual(one["reference_folds"], 3)
-            self.assertGreaterEqual(one["files"]["reference"]["rows"], 290)
+            self.assertEqual(one["files"]["reference"]["rows"], 299)
+            self.assertEqual(one["files"]["validation"]["rows"], 128)
+            self.assertEqual(one["files"]["locked_test"]["rows"], 257)
             self.assertGreaterEqual(min(one["files"]["reference"]["classes"].values()), 3)
+            self.assertEqual(one["files"]["reference"]["classes"][
+                "Leukemia with thrombocytopenia"], 3)
             self.assertEqual(one["source_audit"]["rows_in_duplicate_feature_groups"], 92)
             self.assertEqual(one["source_audit"]["conflicting_label_groups"], 0)
             old_reference = Path(directory) / "old_reference"
-            with self.assertRaisesRegex(ValueError, "No grouped fold has at least 3"):
+            with self.assertRaisesRegex(ValueError, "fewer than 3 expected rows"):
                 make_splits(csv_path, old_reference, seed=42, reference_folds=5)
             self.assertFalse(old_reference.exists())
             with self.assertRaises(FileExistsError):

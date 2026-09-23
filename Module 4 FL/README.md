@@ -83,6 +83,8 @@ ANN only one example of the rarest class. The tool rejects a split that has
 fewer than three reference rows for any class. Exact counts differ because
 groups cannot be split. `split_manifest.json` records class counts, duplicate
 groups, actual row counts, Dirichlet alpha, seed and SHA-256 of every file.
+The group selection uses a seed-derived hash order so supported scikit-learn
+versions do not choose different reference rows.
 **Keep this split fixed for all experiment seeds.** Even this revised split has
 only one or two examples of the rarest class in validation and test. Report
 the class counts; one split cannot establish reliable rare-disease performance.

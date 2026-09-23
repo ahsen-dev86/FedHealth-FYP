@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
+from sklearn.model_selection import GroupShuffleSplit
 
 from fedhealth_ml import preprocess as pp, schema
 from partition import feature_group_ids, partition_dataframe
@@ -17,30 +17,57 @@ def file_sha256(path):
 
 
 def _choose_fold(df, groups, fraction, seed, min_per_class=1):
-    """Choose a stratified group fold with sufficient class coverage."""
-    folds = round(1 / fraction)
+    """Select whole feature groups per class with a stable seed-derived order.
+
+    scikit-learn's StratifiedGroupKFold chooses different folds in supported
+    Colab and local versions. Hash ordering makes this split independent of
+    that implementation while keeping identical CBC rows together.
+    """
+    if not 0 < fraction < 1 or min_per_class < 1:
+        raise ValueError("fraction must be between 0 and 1; minimum must be positive")
     labels = df["Diagnosis"].map(schema.ANEMIA_LABEL_MAP).to_numpy()
     if pd.isna(labels).any():
         raise ValueError("Unknown Diagnosis label")
-    splitter = StratifiedGroupKFold(n_splits=folds, shuffle=True,
-                                    random_state=seed)
-    overall = pd.Series(labels).value_counts(normalize=True)
-    candidates = []
-    for train, held in splitter.split(df, labels, groups):
-        held_counts = pd.Series(labels[held]).value_counts()
-        if any(held_counts.get(label, 0) < min_per_class
-               for label in overall.index):
-            continue
-        held_mix = pd.Series(labels[held]).value_counts(normalize=True)
-        class_difference = sum(abs(held_mix.get(c, 0) - p)
-                               for c, p in overall.items())
-        score = abs(len(held) / len(df) - fraction) + class_difference * 0.1
-        candidates.append((score, train, held))
-    if not candidates:
-        raise ValueError(f"No grouped fold has at least {min_per_class} "
-                         "rows of every class; use fewer reference folds, "
-                         "obtain more data, or lower the declared minimum")
-    _, train, held = min(candidates, key=lambda item: item[0])
+    group_rows = {}
+    for row, group_id in enumerate(groups):
+        group_rows.setdefault(str(group_id), []).append(row)
+    by_class = {}
+    for group_id, rows in group_rows.items():
+        values, counts = np.unique(labels[rows], return_counts=True)
+        allocation_class = values[np.argmax(counts)]
+        by_class.setdefault(allocation_class, []).append((group_id, len(rows)))
+    selected = set()
+    for class_label, entries in by_class.items():
+        entries.sort(key=lambda item: hashlib.sha256(
+            f"{seed}:{item[0]}".encode("ascii")).digest())
+        total = sum(size for _, size in entries)
+        if round(total * fraction) < min_per_class:
+            raise ValueError(f"Requested split fraction gives fewer than "
+                             f"{min_per_class} expected rows of class "
+                             f"{class_label}; use fewer reference folds or "
+                             "obtain more data")
+        prefix_rows = 0
+        candidates = []
+        for index, (_, size) in enumerate(entries[:-1], start=1):
+            prefix_rows += size
+            if prefix_rows >= min_per_class and total - prefix_rows >= 1:
+                candidates.append((abs(prefix_rows / total - fraction),
+                                   index, prefix_rows))
+        if not candidates:
+            raise ValueError(f"No deterministic grouped split has at least "
+                             f"{min_per_class} rows of class {class_label} "
+                             "on both sides; use fewer reference folds or "
+                             "obtain more data")
+        _, count, _ = min(candidates)
+        selected.update(group_id for group_id, _ in entries[:count])
+    held_mask = np.fromiter((str(group_id) in selected for group_id in groups),
+                            dtype=bool, count=len(groups))
+    train, held = np.flatnonzero(~held_mask), np.flatnonzero(held_mask)
+    held_counts = pd.Series(labels[held]).value_counts()
+    train_counts = pd.Series(labels[train]).value_counts()
+    if any(held_counts.get(label, 0) < min_per_class or
+           train_counts.get(label, 0) < 1 for label in np.unique(labels)):
+        raise ValueError("Grouped split lacks class coverage after allocation")
     return df.iloc[train].reset_index(drop=True), df.iloc[held].reset_index(drop=True)
 
 
