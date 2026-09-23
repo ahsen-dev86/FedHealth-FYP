@@ -1,182 +1,153 @@
-# fl/server/server.py
-# ---------------------------------------------------------------------------
-# Module 6.4 — Server Tier (the coordinator). Starts a Flower server that runs
-# `num_rounds` of FedHealthStrategy over the connected lab clients. Optionally
-# terminates TLS (server-authenticated) for the secure uplink.
-#
-# Runs as its own process for Docker Compose (Module 9). For a one-command local
-# run without Docker, use fl/run_simulation.py instead.
-# ---------------------------------------------------------------------------
+"""Standalone Flower coordinator with the same selection rules as simulation."""
 import argparse
-import hashlib
+import json
 import os
-import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import task  # noqa: E402
-from strategy import FedHealthStrategy, weighted_metric_average  # noqa: E402
-
-
-def fit_config(server_round, local_epochs=2):
-    """Per-round instructions pushed to every participating client."""
-    return {
-        "server_round": server_round,
-        "local_epochs": int(local_epochs),
-    }
+import task
+from aggregation import weights_sha256
+from experiment_data import load_arrays, package_versions, sha256_file
+from fl_artifacts import save_ann_checkpoint
+from validation import ValidationTracker
+from reproducibility import seed_all
 
 
-def build_strategy(num_labs, initial_weights, local_epochs=2):
-    return FedHealthStrategy(
-        fraction_fit=1.0,
-        fraction_evaluate=1.0,
-        min_fit_clients=num_labs,
-        min_evaluate_clients=num_labs,
-        min_available_clients=num_labs,
-        initial_parameters=task.ndarrays_to_parameters(initial_weights),
-        on_fit_config_fn=lambda server_round: fit_config(
-            server_round, local_epochs
-        ),
-        evaluate_metrics_aggregation_fn=weighted_metric_average,
-        accept_failures=False,
-    )
+def fit_config(server_round, local_epochs=1, seed=42):
+    return {"server_round": int(server_round),
+            "local_epochs": int(local_epochs), "seed": int(seed)}
+
+
+def load_certificates(ca_path, server_path, key_path, *, insecure_dev=False):
+    provided = [ca_path, server_path, key_path]
+    if insecure_dev:
+        if any(provided):
+            raise ValueError("Do not mix --insecure-dev with TLS certificate paths")
+        return None
+    if not all(provided):
+        raise ValueError("All three TLS certificates are required; otherwise use --insecure-dev")
+    paths = [Path(path) for path in provided]
+    if not all(path.is_file() for path in paths):
+        raise FileNotFoundError("A configured TLS certificate or key is missing")
+    return tuple(path.read_bytes() for path in paths)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="FedHealth FL server (Server Tier)")
-    ap.add_argument("--address", default=os.environ.get("FL_BIND", "0.0.0.0:8080"))
-    ap.add_argument("--rounds", type=int, default=int(os.environ.get("FL_ROUNDS", "5")))
-    ap.add_argument("--labs", type=int, default=int(os.environ.get("FL_LABS", "4")))
-    ap.add_argument(
-        "--local-epochs", type=int,
-        default=int(os.environ.get("LOCAL_EPOCHS", "2")))
-    ap.add_argument("--reference-csv",
-                    default=os.environ.get("REFERENCE_CSV", "../anemia_diagnosed_cbc_data_v4.csv"))
-    ap.add_argument("--preprocessor",
-                    default=os.environ.get("PREPROCESSOR", "./preprocessor.joblib"))
-    ap.add_argument(
-        "--initial-model",
-        default=os.environ.get("INITIAL_MODEL", "./ann.keras"),
-        help="trained Module 3 Model A ann.keras used for round-zero weights")
-    # TLS: pass all three to enable a secure uplink (see scripts/gen_certs.sh).
-    ap.add_argument("--ca-cert", default=os.environ.get("FL_CA_CERT"))
-    ap.add_argument("--server-cert", default=os.environ.get("FL_SERVER_CERT"))
-    ap.add_argument("--server-key", default=os.environ.get("FL_SERVER_KEY"))
-    ap.add_argument(
-        "--output-dir", required=True,
-        help="new directory for the final ANN, preprocessor and run metadata")
-    args = ap.parse_args()
-
-    from pathlib import Path
-    output_dir = Path(args.output_dir).expanduser().resolve()
-    if output_dir.exists():
-        ap.error("--output-dir must not already exist")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--address", default=os.environ.get("FL_BIND", "0.0.0.0:8080"))
+    parser.add_argument("--rounds", type=int, default=int(os.environ.get("FL_ROUNDS", "20")))
+    parser.add_argument("--labs", type=int, default=int(os.environ.get("FL_LABS", "3")))
+    parser.add_argument("--local-epochs", type=int,
+                        default=int(os.environ.get("LOCAL_EPOCHS", "1")))
+    parser.add_argument("--seed", type=int, default=int(os.environ.get("FL_SEED", "42")))
+    parser.add_argument("--init", choices=["warm", "cold"], default="warm")
+    parser.add_argument("--reference-dir", required=True)
+    parser.add_argument("--split-manifest", required=True,
+                        help="split_manifest.json; raw lab files stay with labs")
+    parser.add_argument("--validation-csv", required=True)
+    parser.add_argument("--max-macro-f1-drop", type=float, default=0.05)
+    parser.add_argument("--max-extra-sick-healthy", type=int, default=0)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--ca-cert", default=os.environ.get("FL_CA_CERT"))
+    parser.add_argument("--server-cert", default=os.environ.get("FL_SERVER_CERT"))
+    parser.add_argument("--server-key", default=os.environ.get("FL_SERVER_KEY"))
+    parser.add_argument("--insecure-dev", action="store_true")
+    args = parser.parse_args()
     if args.labs < 2 or args.rounds < 1 or args.local_epochs < 1:
-        ap.error("Use at least 2 labs, 1 round and 1 local epoch")
-    if not os.path.isfile(args.preprocessor):
-        ap.error(
-            "Provide the existing shared Module 3 preprocessor; "
-            "automatic fitting is disabled for the FL server"
-        )
-    initial_model_path = Path(args.initial_model).expanduser().resolve()
-    if not initial_model_path.is_file():
-        ap.error(
-            "Provide the trained Module 3 ann.keras with --initial-model"
-        )
+        parser.error("Use at least 2 labs and positive rounds/local epochs")
+    output_dir = Path(args.output_dir).resolve()
+    if output_dir.exists():
+        parser.error(f"Refusing to overwrite: {output_dir}")
+    certificates = load_certificates(args.ca_cert, args.server_cert,
+                                     args.server_key,
+                                     insecure_dev=args.insecure_dev)
 
     import flwr as fl
+    from strategy import FedHealthStrategy
 
-    # Initialize the federation from Module 3's trained Model A ANN. Clients
-    # receive these weights from Flower, so only the server needs this file.
-    prep = task.load_or_fit_preprocessor(
-        args.reference_csv, args.preprocessor)
-    initial_model = task.load_initial_model(initial_model_path)
-    initial_weights = task.get_weights(initial_model)
-    strategy = build_strategy(
-        args.labs, initial_weights, args.local_epochs
+    split = json.loads(Path(args.split_manifest).read_text(encoding="utf-8"))
+    if split.get("purpose") != "module4_duplicate_aware_split" or (
+        args.labs != split["labs"]
+    ):
+        raise ValueError("Lab count does not match the split manifest")
+    if sha256_file(args.validation_csv) != split["files"]["validation"]["sha256"]:
+        raise ValueError("Validation CSV checksum mismatch")
+    reference_dir = Path(args.reference_dir)
+    ref = json.loads((reference_dir / "manifest.json").read_text(encoding="utf-8"))
+    if ref["reference_sha256"] != split["files"]["reference"]["sha256"]:
+        raise ValueError("Reference model does not belong to the split")
+    prep_path = reference_dir / "preprocessor.joblib"
+    prep_hash = sha256_file(prep_path)
+    if prep_hash != ref["sha256"]["preprocessor.joblib"]:
+        raise ValueError("Preprocessor checksum mismatch")
+    prep = task.load_or_fit_preprocessor(None, prep_path)
+    Xval, yval = load_arrays(args.validation_csv, prep)
+    seed_all(args.seed)
+    if args.init == "warm":
+        ann_path = reference_dir / "ann.keras"
+        if sha256_file(ann_path) != ref["sha256"]["ann.keras"]:
+            raise ValueError("Reference ANN checksum mismatch")
+        initial = task.load_initial_model(ann_path)
+    else:
+        initial = task.get_model()
+    initial_weights = task.get_weights(initial)
+    tracker = ValidationTracker(task.get_model(), Xval, yval,
+                                n_classes=task.N_CLASSES,
+                                max_macro_f1_drop=args.max_macro_f1_drop,
+                                max_extra_sick_healthy=args.max_extra_sick_healthy)
+    tracker.evaluate(0, initial_weights, {})
+    lab_ids = [f"lab-{i:02d}" for i in range(args.labs)]
+    expected_rows = {f"lab-{i:02d}": split["files"][f"lab_{i:02d}"][
+        "local_train_rows"] for i in range(args.labs)}
+    expected_holdout_rows = {f"lab-{i:02d}": split["files"][f"lab_{i:02d}"][
+        "local_holdout_rows"] for i in range(args.labs)}
+    strategy = FedHealthStrategy(
+        reference_weights=initial_weights,
+        allowed_lab_ids=lab_ids, preprocessor_sha256=prep_hash,
+        expected_train_rows=expected_rows,
+        expected_eval_rows=expected_holdout_rows,
+        fraction_fit=1.0, fraction_evaluate=1.0,
+        min_fit_clients=args.labs, min_evaluate_clients=args.labs,
+        min_available_clients=args.labs,
+        initial_parameters=task.ndarrays_to_parameters(initial_weights),
+        on_fit_config_fn=lambda r: fit_config(r, args.local_epochs, args.seed),
+        evaluate_fn=tracker.evaluate, accept_failures=False,
     )
-
-    certificates = None
-    if args.ca_cert and args.server_cert and args.server_key:
-        certificates = (
-            open(args.ca_cert, "rb").read(),
-            open(args.server_cert, "rb").read(),
-            open(args.server_key, "rb").read(),
-        )
-        print("[server] TLS enabled (server-authenticated)")
-
-    print(f"[server] starting on {args.address} for {args.rounds} rounds, "
-          f"{args.labs} labs")
     history = fl.server.start_server(
         server_address=args.address,
         config=fl.server.ServerConfig(num_rounds=args.rounds),
-        strategy=strategy,
-        certificates=certificates,
+        strategy=strategy, certificates=certificates,
     )
-
     expected_rounds = list(range(1, args.rounds + 1))
-    expected_ids = ",".join(f"lab-{i:02d}" for i in range(args.labs))
-
-    for key, expected_value in (
-        ("clients", args.labs),
-        ("lab_ids", expected_ids),
-    ):
-        expected_history = [
-            (round_number, expected_value)
-            for round_number in expected_rounds
-        ]
-        if history.metrics_distributed_fit.get(key) != expected_history:
-            raise RuntimeError(
-                f"Incomplete or inconsistent training history: {key}"
-            )
-
-    if [
-        round_number for round_number, _ in history.losses_distributed
-    ] != expected_rounds:
-        raise RuntimeError("Evaluation did not complete for every round")
-
-    if getattr(strategy, "last_aggregated_round", None) != args.rounds:
-        raise RuntimeError("Final aggregated parameters are missing")
-
-    from fl_artifacts import save_ann_checkpoint
-
-    final_model = task.get_model()
-    task.set_weights(
-        final_model,
-        task.parameters_to_ndarrays(
-            strategy.last_aggregated_parameters
-        ),
-    )
-
-    checkpoint = save_ann_checkpoint(
-        final_model,
-        prep,
-        output_dir,
-        run_info={
-            "purpose": "standalone_client_server_training",
-            "trained": True,
-            "initialization": "module3_ann",
-            "initial_model": {
-                "filename": initial_model_path.name,
-                "sha256": hashlib.sha256(
-                    initial_model_path.read_bytes()
-                ).hexdigest(),
-            },
-            "labs": args.labs,
-            "rounds": args.rounds,
-            "local_epochs": args.local_epochs,
-            "history": {
-                "losses_distributed": history.losses_distributed,
-                "metrics_distributed": history.metrics_distributed,
-                "metrics_distributed_fit": (
-                    history.metrics_distributed_fit
-                ),
-            },
-        },
-    )
-    print(
-        "[server] saved and reload-verified checkpoint:",
-        checkpoint,
-    )
+    if [r["round"] for r in strategy.round_trace] != expected_rounds or (
+        [r["round"] for r in tracker.history] != [0] + expected_rounds
+    ) or [r for r, _ in history.losses_distributed] != expected_rounds:
+        raise RuntimeError("Standalone run did not complete all rounds")
+    selected = task.get_model()
+    task.set_weights(selected, tracker.best_weights)
+    if weights_sha256(task.get_weights(selected)) != tracker.best_sha256:
+        raise RuntimeError("Selected weights changed before saving")
+    info = {
+        "purpose": "module4_ann_federation_standalone",
+        "initialization": args.init, "trained_rounds": args.rounds,
+        "selected_round": tracker.best_round,
+        "selected_weights_sha256": tracker.best_sha256,
+        "selected_validation_metrics": tracker.best_metrics,
+        "round_validation": tracker.history,
+        "round_weight_trace": strategy.round_trace,
+        "settings": {"labs": args.labs, "rounds": args.rounds,
+                     "local_epochs": args.local_epochs, "seed": args.seed,
+                     "split_seed": split["split_seed"],
+                     "dirichlet_alpha": split["dirichlet_alpha"],
+                     "max_macro_f1_drop": args.max_macro_f1_drop,
+                     "max_extra_sick_healthy": args.max_extra_sick_healthy,
+                     "transport": "tls" if certificates else "insecure_dev"},
+        "split_manifest_sha256": sha256_file(args.split_manifest),
+        "preprocessor_sha256": prep_hash,
+        "versions": package_versions(),
+    }
+    saved = save_ann_checkpoint(selected, prep, output_dir, run_info=info,
+                                expected_weight_sha256=tracker.best_sha256)
+    print("Saved selected ANN:", saved)
 
 
 if __name__ == "__main__":

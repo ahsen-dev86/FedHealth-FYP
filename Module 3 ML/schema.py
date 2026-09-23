@@ -19,6 +19,15 @@ MODEL_A_FEATURES = [
     "HCT", "MCV", "MCH", "MCHC", "PLT", "PDW", "PCT",
 ]
 
+# The numeric scale expected by the trained Model A. Lab connectors must
+# declare their source units and convert to these before preprocessing.
+MODEL_A_UNITS = {
+    "WBC": "10^3/uL", "LYMp": "%", "NEUTp": "%",
+    "LYMn": "10^3/uL", "NEUTn": "10^3/uL", "RBC": "10^6/uL",
+    "HGB": "g/dL", "HCT": "%", "MCV": "fL", "MCH": "pg",
+    "MCHC": "g/dL", "PLT": "10^3/uL", "PDW": "fL", "PCT": "%",
+}
+
 # --- Model B candidate CBC feature vector (routine indices only) -------------
 MODEL_B_FEATURES = [
     "hb", "pcv", "rbc", "mcv", "mch", "mchc", "rdw",

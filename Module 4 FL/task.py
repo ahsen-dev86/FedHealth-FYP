@@ -12,7 +12,7 @@
 # normalization is a documented future enhancement.
 # ---------------------------------------------------------------------------
 import os
-import sys
+import json
 
 import numpy as np
 import pandas as pd
@@ -29,36 +29,25 @@ N_CLASSES = len(CLASSES)
 
 # --- Shared preprocessor -----------------------------------------------------
 def load_or_fit_preprocessor(reference_csv, cache_path):
-    """Load the shared preprocessor if present, else fit it once on the
-    reference dataset and cache it. In production this is the Module 3 artifact
-    (preprocessor.joblib) shipped to labs; here we can derive it so the demo
-    runs stand-alone."""
-    if os.path.exists(cache_path):
-        return pp.CBCPreprocessor.load(cache_path)
-    X, _ = pp.load_anemia(reference_csv)
-    prep = pp.CBCPreprocessor(FEATURES).fit(X)
-    os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
-    prep.save(cache_path)
+    """Load the training-only reference preprocessor; never fit from a lab CSV."""
+    if not os.path.isfile(cache_path):
+        raise FileNotFoundError(f"Shared preprocessor not found: {cache_path}")
+    prep = pp.CBCPreprocessor.load(cache_path)
+    if list(prep.features) != list(FEATURES):
+        raise ValueError("Shared preprocessor feature order differs from Model A")
     return prep
 
 
 # --- Per-lab data ------------------------------------------------------------
-def prepare_partition_records(df):
-    """Normalize and clean raw local CBC records before splitting."""
+def prepare_partition_records(df, units, *, strict_report=False):
+    """Clean canonical training CSVs or strictly convert declared lab reports."""
     if "Diagnosis" not in df.columns:
         raise ValueError("Local shard must contain a Diagnosis column.")
 
-    df = df.copy()
-    feature_columns = [name for name in FEATURES if name in df.columns]
-    if feature_columns:
-        normalized = [
-            pp.normalize_units(row, feature_columns)
-            for row in df[feature_columns].to_dict("records")
-        ]
-        df.loc[:, feature_columns] = pd.DataFrame(
-            normalized, index=df.index
-        )[feature_columns]
-
+    if strict_report:
+        df = pp.convert_declared_units(df, units, FEATURES)
+    elif units != schema.MODEL_A_UNITS:
+        raise ValueError("Canonical training CSV requires canonical unit declaration")
     X = pp.clean_ranges(df, FEATURES)
     y = df["Diagnosis"].map(schema.ANEMIA_LABEL_MAP)
     if y.isna().any():
@@ -69,16 +58,15 @@ def prepare_partition_records(df):
 
 def split_partition_data(X, y, preprocessor, test_frac=0.2, seed=42):
     """Create a local holdout, then transform features and encode labels."""
-    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import GroupShuffleSplit
+    from partition import feature_group_ids
 
-    try:
-        Xtr, Xte, ytr, yte = train_test_split(
-            X, y, test_size=test_frac, stratify=y, random_state=seed
-        )
-    except ValueError:
-        Xtr, Xte, ytr, yte = train_test_split(
-            X, y, test_size=test_frac, random_state=seed
-        )
+    groups = feature_group_ids(X)
+    train_idx, holdout_idx = next(GroupShuffleSplit(
+        n_splits=1, test_size=test_frac, random_state=seed
+    ).split(X, y, groups))
+    Xtr, Xte = X.iloc[train_idx], X.iloc[holdout_idx]
+    ytr, yte = y.iloc[train_idx], y.iloc[holdout_idx]
 
     Xtr = preprocessor.transform(Xtr)
     Xte = preprocessor.transform(Xte)
@@ -87,9 +75,11 @@ def split_partition_data(X, y, preprocessor, test_frac=0.2, seed=42):
     return Xtr, ytr, Xte, yte
 
 
-def load_partition_data(shard_csv, preprocessor, test_frac=0.2, seed=42):
+def load_partition_data(shard_csv, preprocessor, units, test_frac=0.2, seed=42,
+                        strict_report=False):
     """Load, normalize, clean, split and transform one local lab shard."""
-    X, y = prepare_partition_records(pd.read_csv(shard_csv))
+    X, y = prepare_partition_records(pd.read_csv(shard_csv), units,
+                                     strict_report=strict_report)
     return split_partition_data(X, y, preprocessor, test_frac, seed)
 
 
@@ -169,10 +159,9 @@ def parameters_to_ndarrays(parameters):
 
 # --- Metrics used by clients + the strategy ---------------------------------
 def local_metrics(y_true, y_pred):
-    """Balanced metrics so a lab with a skewed shard still reports honestly."""
-    from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score
+    """Send integer counts so the server can calculate pooled metrics."""
+    from sklearn.metrics import confusion_matrix
+    matrix = confusion_matrix(y_true, y_pred, labels=np.arange(N_CLASSES))
     return {
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
-        "macro_f1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+        "confusion_matrix": json.dumps(matrix.tolist(), separators=(",", ":")),
     }

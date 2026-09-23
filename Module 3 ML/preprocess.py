@@ -55,8 +55,56 @@ _UNIT_CANDIDATE_FACTORS = {
     "NEUTN": [1e-3],
     "HGB":   [0.1],
     "RBC":   [1e-6, 1e-3],
-    "HCT":   [0.01],      # if reported as a fraction (0.38) instead of % (38)
+    "HCT":   [100.0],     # if reported as a fraction (0.38) instead of % (38)
 }
+
+
+_EXPLICIT_UNIT_FACTORS = {
+    ("WBC", "cells/uL"): 1e-3,
+    ("LYMn", "cells/uL"): 1e-3,
+    ("NEUTn", "cells/uL"): 1e-3,
+    ("PLT", "cells/uL"): 1e-3,
+    ("RBC", "cells/uL"): 1e-6,
+    ("RBC", "10^3/uL"): 1e-3,
+    ("HGB", "g/L"): 0.1,
+    ("HCT", "fraction"): 100.0,
+    ("LYMp", "fraction"): 100.0,
+    ("NEUTp", "fraction"): 100.0,
+    ("PCT", "fraction"): 100.0,
+}
+
+
+def convert_declared_units(df, units, features=None):
+    """Convert a lab report using declared units, rejecting impossible values.
+
+    Canonical training CSVs go through ``load_anemia`` instead. No value-based
+    guessing is used on the lab training path.
+    """
+    features = list(features or schema.MODEL_A_FEATURES)
+    if not isinstance(units, dict) or set(units) != set(features):
+        raise ValueError("Lab must declare one unit for every Model A feature")
+    if not set(features).issubset(df.columns):
+        raise ValueError("Lab report is missing Model A feature columns")
+    result = df.copy()
+    for feature in features:
+        source_unit = units[feature]
+        canonical_unit = schema.MODEL_A_UNITS[feature]
+        if source_unit == canonical_unit:
+            factor = 1.0
+        else:
+            factor = _EXPLICIT_UNIT_FACTORS.get((feature, source_unit))
+            if factor is None:
+                raise ValueError(f"Unsupported declared unit for {feature}: {source_unit}")
+        numeric = pd.to_numeric(result[feature], errors="raise").astype(float)
+        converted = numeric * factor
+        if not np.isfinite(converted[numeric.notna()]).all():
+            raise ValueError(f"Non-finite {feature} value in lab report")
+        lo, hi = schema.PLAUSIBLE_RANGES[feature]
+        invalid = converted.notna() & ~converted.between(lo, hi)
+        if invalid.any():
+            raise ValueError(f"Impossible {feature} value after declared unit conversion")
+        result[feature] = converted
+    return result
 
 
 def normalize_units(record, features=None):

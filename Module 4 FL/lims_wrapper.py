@@ -18,7 +18,6 @@ import sys
 
 import pandas as pd
 
-from fedhealth_ml import schema, preprocess as pp  # noqa: E402
 from task import prepare_partition_records  # noqa: E402
 
 
@@ -40,9 +39,9 @@ class MockLIMS:
 
     # --- normalization (shared with every tier via fedhealth_ml) ------------
     @staticmethod
-    def normalize(df):
+    def normalize(df, units, *, strict_report=False):
         """Prepare local raw records with the shared FL training pipeline."""
-        return prepare_partition_records(df)
+        return prepare_partition_records(df, units, strict_report=strict_report)
 
     def summary(self):
         """Lightweight, privacy-safe description of the local silo (row/feature

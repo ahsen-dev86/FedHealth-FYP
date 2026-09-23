@@ -1,149 +1,173 @@
-# fl/run_simulation.py
-# ---------------------------------------------------------------------------
-# One-command federated run WITHOUT Docker — the easiest way to demo the whole
-# federation locally or in Colab. It partitions the dataset into N labs, spins
-# them up in-process with Flower's simulation engine, and runs FedAvg for R
-# rounds, printing the global model's aggregated metrics each round.
-#
-#   python fl/run_simulation.py --csv anemia_diagnosed_cbc_data_v4.csv \
-#                               --labs 4 --rounds 5 --mode non_iid
-# ---------------------------------------------------------------------------
+"""Run ANN-only federated training on a locked, duplicate-aware split."""
 import argparse
-import hashlib
-import os
-import sys
+import json
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import task           # noqa: E402
-import partition      # noqa: E402
+import task
+from aggregation import weights_sha256
+from experiment_data import (load_arrays, load_split_manifest,
+                             package_versions, sha256_file)
+from fedhealth_ml import schema
+from fl_artifacts import save_ann_checkpoint
+from validation import ValidationTracker
+from reproducibility import seed_all
+
+
+def run_simulation(split_dir, reference_dir, output_dir, *, init="warm",
+                   rounds=20, local_epochs=1, seed=42,
+                   max_macro_f1_drop=0.05, max_extra_sick_healthy=0,
+                   audit_dir=None):
+    import flwr as fl
+    from client import LabClient, _as_flower_client
+    from strategy import FedHealthStrategy
+
+    split_dir = Path(split_dir).resolve()
+    reference_dir = Path(reference_dir).resolve()
+    output_dir = Path(output_dir).resolve()
+    if output_dir.exists():
+        raise FileExistsError(f"Refusing to overwrite: {output_dir}")
+    if init not in {"warm", "cold"} or rounds < 1 or local_epochs < 1:
+        raise ValueError("Use warm/cold initialization and positive rounds/epochs")
+    split = load_split_manifest(split_dir)
+    ref = json.loads((reference_dir / "manifest.json").read_text(encoding="utf-8"))
+    if ref.get("purpose") != "module4_reference_warm_start" or (
+        ref["reference_sha256"] != split["files"]["reference"]["sha256"] or
+        ref["validation_sha256"] != split["files"]["validation"]["sha256"]
+    ):
+        raise ValueError("Reference model does not belong to this split")
+    prep_path = reference_dir / "preprocessor.joblib"
+    if sha256_file(prep_path) != ref["sha256"]["preprocessor.joblib"]:
+        raise ValueError("Reference preprocessor checksum mismatch")
+    prep = task.load_or_fit_preprocessor(None, prep_path)
+    prep_hash = sha256_file(prep_path)
+    Xval, yval = load_arrays(split_dir / split["files"]["validation"]["path"], prep)
+    seed_all(seed)
+    if init == "warm":
+        initial_path = reference_dir / "ann.keras"
+        if sha256_file(initial_path) != ref["sha256"]["ann.keras"]:
+            raise ValueError("Reference ANN checksum mismatch")
+        initial_model = task.load_initial_model(initial_path)
+    else:
+        initial_model = task.get_model()
+    initial_weights = task.get_weights(initial_model)
+    tracker = ValidationTracker(task.get_model(), Xval, yval,
+                                n_classes=task.N_CLASSES,
+                                max_macro_f1_drop=max_macro_f1_drop,
+                                max_extra_sick_healthy=max_extra_sick_healthy)
+    tracker.evaluate(0, initial_weights, {})
+    lab_names = [f"lab-{i:02d}" for i in range(split["labs"])]
+    expected_rows = {f"lab-{i:02d}": split["files"][f"lab_{i:02d}"][
+        "local_train_rows"] for i in range(split["labs"])}
+    expected_holdout_rows = {f"lab-{i:02d}": split["files"][f"lab_{i:02d}"][
+        "local_holdout_rows"] for i in range(split["labs"])}
+    units = dict(schema.MODEL_A_UNITS)  # split source CSV is canonical
+
+    def client_fn(context):
+        config = getattr(context, "node_config", None)
+        if config is None or "partition-id" not in config:
+            raise ValueError("Flower did not identify the client partition")
+        cid = int(config["partition-id"])
+        if not 0 <= cid < len(lab_names):
+            raise ValueError("Flower partition ID outside configured labs")
+        shard = split_dir / split["files"][f"lab_{cid:02d}"]["path"]
+        lab = LabClient(lab_names[cid], shard, prep, units=units,
+                        local_epochs=local_epochs, seed=seed + cid,
+                        split_seed=split["split_seed"],
+                        preprocessor_sha256=prep_hash)
+        return _as_flower_client(lab)
+
+    strategy = FedHealthStrategy(
+        reference_weights=initial_weights,
+        allowed_lab_ids=lab_names,
+        preprocessor_sha256=prep_hash,
+        expected_train_rows=expected_rows,
+        expected_eval_rows=expected_holdout_rows,
+        audit_dir=audit_dir,
+        fraction_fit=1.0, fraction_evaluate=1.0,
+        min_fit_clients=len(lab_names), min_evaluate_clients=len(lab_names),
+        min_available_clients=len(lab_names),
+        initial_parameters=task.ndarrays_to_parameters(initial_weights),
+        on_fit_config_fn=lambda r: {"server_round": int(r),
+                                    "local_epochs": int(local_epochs),
+                                    "seed": int(seed)},
+        evaluate_fn=tracker.evaluate,
+        accept_failures=False,
+    )
+    try:
+        history = fl.simulation.start_simulation(
+            client_fn=client_fn, num_clients=len(lab_names),
+            config=fl.server.ServerConfig(num_rounds=rounds),
+            strategy=strategy, client_resources={"num_cpus": 1, "num_gpus": 0},
+        )
+    finally:
+        import ray
+        if ray.is_initialized():
+            ray.shutdown()
+    expected_rounds = list(range(1, rounds + 1))
+    if [item["round"] for item in strategy.round_trace] != expected_rounds:
+        raise RuntimeError("Incomplete training rounds")
+    if [item["round"] for item in tracker.history] != [0] + expected_rounds:
+        raise RuntimeError("Incomplete central validation rounds")
+    if [r for r, _ in history.losses_distributed] != expected_rounds:
+        raise RuntimeError("Incomplete distributed evaluation rounds")
+    if tracker.best_weights is None:
+        raise RuntimeError("No eligible model was selected")
+    final_model = task.get_model()
+    task.set_weights(final_model, tracker.best_weights)
+    if weights_sha256(task.get_weights(final_model)) != tracker.best_sha256:
+        raise RuntimeError("Selected weights changed before saving")
+    run_info = {
+        "purpose": "module4_ann_federation", "initialization": init,
+        "trained_rounds": rounds, "selected_round": tracker.best_round,
+        "selected_weights_sha256": tracker.best_sha256,
+        "selected_validation_metrics": tracker.best_metrics,
+        "round_validation": tracker.history,
+        "round_weight_trace": strategy.round_trace,
+        "distributed_history": {
+            "losses": history.losses_distributed,
+            "metrics": history.metrics_distributed,
+            "fit": history.metrics_distributed_fit,
+        },
+        "settings": {"labs": len(lab_names), "rounds": rounds,
+                     "local_epochs": local_epochs, "seed": seed,
+                     "split_seed": split["split_seed"],
+                     "mode": split["mode"], "dirichlet_alpha": split["dirichlet_alpha"],
+                     "max_macro_f1_drop": max_macro_f1_drop,
+                     "max_extra_sick_healthy": max_extra_sick_healthy},
+        "input_sha256": {name: info["sha256"] for name, info in
+                         split["files"].items() if name != "locked_test"},
+        "preprocessor_sha256": prep_hash,
+        "reference_ann_sha256": ref["sha256"]["ann.keras"],
+        "versions": package_versions(),
+    }
+    checkpoint = save_ann_checkpoint(final_model, prep, output_dir,
+                                     run_info=run_info,
+                                     expected_weight_sha256=tracker.best_sha256)
+    print("Saved selected ANN:", checkpoint)
+    print("Selected round:", tracker.best_round,
+          "validation macro-F1:", tracker.best_metrics["macro_f1"])
+    return run_info
 
 
 def main():
-    ap = argparse.ArgumentParser(description="FedHealth federated simulation")
-    ap.add_argument("--csv", default="anemia_diagnosed_cbc_data_v4.csv",
-                    help="source CBC dataset to partition across labs")
-    ap.add_argument("--labs", type=int, default=4)
-    ap.add_argument("--rounds", type=int, default=5)
-    ap.add_argument("--mode", choices=["iid", "non_iid"], default="iid")
-    ap.add_argument("--local-epochs", type=int, default=2)
-    ap.add_argument("--shard-dir", default="./fl/client/data")
-    ap.add_argument("--preprocessor", default="./fl/preprocessor.joblib")
-    ap.add_argument(
-        "--initial-model", required=True,
-        help="trained Module 3 Model A ann.keras used for round-zero weights")
-    ap.add_argument(
-        "--output-dir", required=True,
-        help="new directory for the final ANN, preprocessor and run metadata")
-    args = ap.parse_args()
-
-    from pathlib import Path
-    output_dir = Path(args.output_dir).expanduser().resolve()
-    if output_dir.exists():
-        ap.error("--output-dir must not already exist")
-    if args.labs < 2 or args.rounds < 1 or args.local_epochs < 1:
-        ap.error("Use at least 2 labs, 1 round and 1 local epoch")
-    if not Path(args.preprocessor).is_file():
-        ap.error("Provide an existing saved preprocessor; automatic fitting is disabled here")
-    initial_model_path = Path(args.initial_model).expanduser().resolve()
-    if not initial_model_path.is_file():
-        ap.error("--initial-model must point to the trained Module 3 ann.keras")
-
-    import flwr as fl
-
-    # 1. Partition the central dataset into per-lab shards.
-    print(f"Partitioning {args.csv} -> {args.labs} labs ({args.mode}):")
-    shard_paths = partition.write_shards(
-        args.csv, args.shard_dir, args.labs, mode=args.mode)
-
-    # 2. Shared preprocessor (agreed normalization standard) for all labs.
-    prep = task.load_or_fit_preprocessor(args.csv, args.preprocessor)
-
-    # 3. client_fn: build the lab client for a given partition id.
-    def client_fn(context):
-        # Flower passes a Context in recent versions; fall back to a raw cid str.
-        cid = getattr(context, "node_config", {}).get("partition-id") \
-            if hasattr(context, "node_config") else None
-        if cid is None:
-            cid = int(getattr(context, "cid", 0)) if hasattr(context, "cid") else 0
-        cid = int(cid)
-        from client import LabClient, _as_flower_client
-        lab = LabClient(f"lab-{cid:02d}", shard_paths[cid], prep,
-                        local_epochs=args.local_epochs)
-        return _as_flower_client(lab)
-
-    # 4. Start federation from the trained Module 3 Model A ANN.
-    from strategy import FedHealthStrategy, weighted_metric_average
-    initial_model = task.load_initial_model(initial_model_path)
-    initial = task.get_weights(initial_model)
-    strategy = FedHealthStrategy(
-        fraction_fit=1.0, fraction_evaluate=1.0,
-        min_fit_clients=args.labs, min_evaluate_clients=args.labs,
-        min_available_clients=args.labs,
-        initial_parameters=task.ndarrays_to_parameters(initial),
-        evaluate_metrics_aggregation_fn=weighted_metric_average,
-        accept_failures=False,
-    )
-
-    # 5. Run the simulation.
-    hist = fl.simulation.start_simulation(
-        client_fn=client_fn,
-        num_clients=args.labs,
-        config=fl.server.ServerConfig(num_rounds=args.rounds),
-        strategy=strategy,
-        client_resources={"num_cpus": 1, "num_gpus": 0},
-    )
-
-    # Refuse to save a partial run as a completed federation.
-    expected_rounds = list(range(1, args.rounds + 1))
-    expected_ids = ",".join(f"lab-{i:02d}" for i in range(args.labs))
-
-    for key, expected_value in (
-        ("clients", args.labs),
-        ("lab_ids", expected_ids),
-    ):
-        expected_history = [(r, expected_value) for r in expected_rounds]
-        if hist.metrics_distributed_fit.get(key) != expected_history:
-            raise RuntimeError(f"Incomplete or inconsistent training history: {key}")
-
-    if [r for r, _ in hist.losses_distributed] != expected_rounds:
-        raise RuntimeError("Evaluation did not complete for every round")
-    if getattr(strategy, "last_aggregated_round", None) != args.rounds:
-        raise RuntimeError("Final aggregated parameters are missing")
-
-    from fl_artifacts import save_ann_checkpoint
-    final_model = task.get_model()
-    task.set_weights(
-        final_model,
-        task.parameters_to_ndarrays(strategy.last_aggregated_parameters),
-    )
-    checkpoint = save_ann_checkpoint(
-        final_model, prep, output_dir,
-        run_info={
-            "purpose": "federated_training",
-            "trained": True,
-            "initialization": "module3_ann",
-            "initial_model": {
-                "filename": initial_model_path.name,
-                "sha256": hashlib.sha256(
-                    initial_model_path.read_bytes()
-                ).hexdigest(),
-            },
-            "labs": args.labs,
-            "rounds": args.rounds,
-            "local_epochs": args.local_epochs,
-            "partition_mode": args.mode,
-            "history": {
-                "losses_distributed": hist.losses_distributed,
-                "metrics_distributed": hist.metrics_distributed,
-                "metrics_distributed_fit": hist.metrics_distributed_fit,
-            },
-        },
-    )
-    print("Saved and reload-verified ANN checkpoint:", checkpoint)
-
-    print("\n=== Federated training complete ===")
-    for rnd, metrics in hist.metrics_distributed.get("macro_f1", []):
-        print(f"  round {rnd}: global macro-F1 (weighted over labs) = {metrics:.3f}")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--split-dir", required=True)
+    parser.add_argument("--reference-dir", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--init", choices=["warm", "cold"], default="warm")
+    parser.add_argument("--rounds", type=int, default=20)
+    parser.add_argument("--local-epochs", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--max-macro-f1-drop", type=float, default=0.05)
+    parser.add_argument("--max-extra-sick-healthy", type=int, default=0)
+    parser.add_argument("--audit-dir", help="new directory for round weight arrays (smoke test)")
+    args = parser.parse_args()
+    run_simulation(args.split_dir, args.reference_dir, args.output_dir,
+                   init=args.init, rounds=args.rounds,
+                   local_epochs=args.local_epochs, seed=args.seed,
+                   max_macro_f1_drop=args.max_macro_f1_drop,
+                   max_extra_sick_healthy=args.max_extra_sick_healthy,
+                   audit_dir=args.audit_dir)
 
 
 if __name__ == "__main__":
