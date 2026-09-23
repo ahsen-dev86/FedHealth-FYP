@@ -1,4 +1,4 @@
-"""Run ANN-only federated training on a locked, duplicate-aware split."""
+"""Run ANN-only federation from a reference ANN or the exact saved Module 3 ANN."""
 import argparse
 import json
 from pathlib import Path
@@ -16,40 +16,59 @@ from reproducibility import seed_all
 def run_simulation(split_dir, reference_dir, output_dir, *, init="warm",
                    rounds=20, local_epochs=1, seed=42,
                    max_macro_f1_drop=0.05, max_extra_sick_healthy=0,
-                   audit_dir=None):
+                   audit_dir=None, module3_dir=None):
     import flwr as fl
     from client import LabClient, _as_flower_client
     from strategy import FedHealthStrategy
 
     split_dir = Path(split_dir).resolve()
-    reference_dir = Path(reference_dir).resolve()
     output_dir = Path(output_dir).resolve()
     if output_dir.exists():
         raise FileExistsError(f"Refusing to overwrite: {output_dir}")
     if init not in {"warm", "cold"} or rounds < 1 or local_epochs < 1:
         raise ValueError("Use warm/cold initialization and positive rounds/epochs")
+    if (reference_dir is None) == (module3_dir is None):
+        raise ValueError("Provide exactly one of reference_dir or module3_dir")
+    if module3_dir is not None and init != "warm":
+        raise ValueError("Saved Module 3 ANN mode requires warm initialization")
     split = load_split_manifest(split_dir)
-    ref = json.loads((reference_dir / "manifest.json").read_text(encoding="utf-8"))
-    if ref.get("purpose") != "module4_reference_warm_start" or (
-        ref["reference_sha256"] != split["files"]["reference"]["sha256"] or
-        ref["validation_sha256"] != split["files"]["validation"]["sha256"]
-    ):
-        raise ValueError("Reference model does not belong to this split")
-    prep_path = reference_dir / "preprocessor.joblib"
-    if sha256_file(prep_path) != ref["sha256"]["preprocessor.joblib"]:
-        raise ValueError("Reference preprocessor checksum mismatch")
+    if module3_dir is not None:
+        if split["purpose"] != "module4_saved_module3_ann_finetune_split":
+            raise ValueError("Saved Module 3 ANN needs a matching Module 3 split")
+        source_dir = Path(module3_dir).resolve()
+        expected_hashes = split["module3_artifacts_sha256"]
+        for name, expected_hash in expected_hashes.items():
+            if sha256_file(source_dir / name) != expected_hash:
+                raise ValueError(f"Module 3 artifact checksum mismatch: {name}")
+        source_kind = "saved_module3_ann"
+    else:
+        if split["purpose"] != "module4_duplicate_aware_split":
+            raise ValueError("Reference ANN needs a matching duplicate-aware split")
+        source_dir = Path(reference_dir).resolve()
+        ref = json.loads((source_dir / "manifest.json").read_text(encoding="utf-8"))
+        if ref.get("purpose") != "module4_reference_warm_start" or (
+            ref["reference_sha256"] != split["files"]["reference"]["sha256"] or
+            ref["validation_sha256"] != split["files"]["validation"]["sha256"]
+        ):
+            raise ValueError("Reference model does not belong to this split")
+        expected_hashes = ref["sha256"]
+        source_kind = "separate_reference_ann" if init == "warm" else "cold_start"
+    prep_path = source_dir / "preprocessor.joblib"
+    if sha256_file(prep_path) != expected_hashes["preprocessor.joblib"]:
+        raise ValueError("Source preprocessor checksum mismatch")
     prep = task.load_or_fit_preprocessor(None, prep_path)
     prep_hash = sha256_file(prep_path)
     Xval, yval = load_arrays(split_dir / split["files"]["validation"]["path"], prep)
     seed_all(seed)
     if init == "warm":
-        initial_path = reference_dir / "ann.keras"
-        if sha256_file(initial_path) != ref["sha256"]["ann.keras"]:
-            raise ValueError("Reference ANN checksum mismatch")
+        initial_path = source_dir / "ann.keras"
+        if sha256_file(initial_path) != expected_hashes["ann.keras"]:
+            raise ValueError("Source ANN checksum mismatch")
         initial_model = task.load_initial_model(initial_path)
     else:
         initial_model = task.get_model()
     initial_weights = task.get_weights(initial_model)
+    initial_weights_hash = weights_sha256(initial_weights)
     tracker = ValidationTracker(task.get_model(), Xval, yval,
                                 n_classes=task.N_CLASSES,
                                 max_macro_f1_drop=max_macro_f1_drop,
@@ -106,10 +125,14 @@ def run_simulation(split_dir, reference_dir, output_dir, *, init="warm",
     expected_rounds = list(range(1, rounds + 1))
     if [item["round"] for item in strategy.round_trace] != expected_rounds:
         raise RuntimeError("Incomplete training rounds")
+    if strategy.round_trace[0]["received_sha256"] != initial_weights_hash:
+        raise RuntimeError("Labs did not receive the exact initial ANN weights")
     if [item["round"] for item in tracker.history] != [0] + expected_rounds:
         raise RuntimeError("Incomplete central validation rounds")
     if [r for r, _ in history.losses_distributed] != expected_rounds:
         raise RuntimeError("Incomplete distributed evaluation rounds")
+    if module3_dir is not None and strategy.current_weight_sha256 == initial_weights_hash:
+        raise RuntimeError("Federation did not change the saved Module 3 ANN weights")
     if tracker.best_weights is None:
         raise RuntimeError("No eligible model was selected")
     final_model = task.get_model()
@@ -118,7 +141,11 @@ def run_simulation(split_dir, reference_dir, output_dir, *, init="warm",
         raise RuntimeError("Selected weights changed before saving")
     run_info = {
         "purpose": "module4_ann_federation", "initialization": init,
+        "initial_model_source": source_kind,
+        "initial_weights_sha256": initial_weights_hash,
         "trained_rounds": rounds, "selected_round": tracker.best_round,
+        "selected_model_contains_federated_updates": tracker.best_round > 0,
+        "last_round_weights_sha256": strategy.current_weight_sha256,
         "selected_weights_sha256": tracker.best_sha256,
         "selected_validation_metrics": tracker.best_metrics,
         "round_validation": tracker.history,
@@ -137,13 +164,34 @@ def run_simulation(split_dir, reference_dir, output_dir, *, init="warm",
         "input_sha256": {name: info["sha256"] for name, info in
                          split["files"].items() if name != "locked_test"},
         "preprocessor_sha256": prep_hash,
-        "reference_ann_sha256": ref["sha256"]["ann.keras"],
+        "source_ann_sha256": expected_hashes["ann.keras"],
+        "source_artifacts_sha256": expected_hashes,
+        "evaluation_warning": split.get("evaluation_warning"),
         "versions": package_versions(),
     }
     checkpoint = save_ann_checkpoint(final_model, prep, output_dir,
                                      run_info=run_info,
                                      expected_weight_sha256=tracker.best_sha256)
+    if module3_dir is not None:
+        last_model = task.get_model()
+        task.set_weights(last_model, strategy.reference_weights)
+        if weights_sha256(task.get_weights(last_model)) != strategy.current_weight_sha256:
+            raise RuntimeError("Final aggregated weights changed before saving")
+        last_info = dict(run_info)
+        last_info.update({
+            "purpose": "module4_last_round_federated_ann_diagnostic",
+            "selection_role": "unselected_last_round_for_analysis_only",
+            "selected_round": rounds,
+            "selected_model_contains_federated_updates": True,
+            "selected_validation_metrics": tracker.history[-1],
+            "selected_weights_sha256": strategy.current_weight_sha256,
+        })
+        save_ann_checkpoint(last_model, prep, output_dir / "last_round",
+                            run_info=last_info,
+                            expected_weight_sha256=strategy.current_weight_sha256)
     print("Saved selected ANN:", checkpoint)
+    if module3_dir is not None:
+        print("Saved final-round diagnostic ANN:", output_dir / "last_round")
     print("Selected round:", tracker.best_round,
           "validation macro-F1:", tracker.best_metrics["macro_f1"])
     return run_info
@@ -152,7 +200,9 @@ def run_simulation(split_dir, reference_dir, output_dir, *, init="warm",
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--split-dir", required=True)
-    parser.add_argument("--reference-dir", required=True)
+    sources = parser.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--reference-dir")
+    sources.add_argument("--module3-dir", help="directory with saved Module 3 ann.keras, preprocessor.joblib, arrays.npz and meta.json")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--init", choices=["warm", "cold"], default="warm")
     parser.add_argument("--rounds", type=int, default=20)
@@ -167,7 +217,7 @@ def main():
                    local_epochs=args.local_epochs, seed=args.seed,
                    max_macro_f1_drop=args.max_macro_f1_drop,
                    max_extra_sick_healthy=args.max_extra_sick_healthy,
-                   audit_dir=args.audit_dir)
+                   audit_dir=args.audit_dir, module3_dir=args.module3_dir)
 
 
 if __name__ == "__main__":

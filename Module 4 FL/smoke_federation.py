@@ -9,7 +9,8 @@ from aggregation import weights_sha256
 from run_simulation import run_simulation
 
 
-def smoke_test(split_dir, reference_dir, output_dir, audit_dir, *, seed=42):
+def smoke_test(split_dir, reference_dir, output_dir, audit_dir, *, seed=42,
+               module3_dir=None):
     import tensorflow as tf
 
     split = json.loads((Path(split_dir) / "split_manifest.json").read_text(
@@ -19,7 +20,15 @@ def smoke_test(split_dir, reference_dir, output_dir, audit_dir, *, seed=42):
 
     info = run_simulation(split_dir, reference_dir, output_dir,
                           init="warm", rounds=2, local_epochs=1, seed=seed,
-                          audit_dir=audit_dir)
+                          audit_dir=audit_dir, module3_dir=module3_dir)
+    if module3_dir is not None:
+        import task
+        source_weights = task.get_weights(task.load_initial_model(
+            Path(module3_dir) / "ann.keras"))
+        if (weights_sha256(source_weights) != info["initial_weights_sha256"] or
+            info["round_weight_trace"][0]["received_sha256"] !=
+                weights_sha256(source_weights)):
+            raise AssertionError("Round 1 did not start from saved Module 3 ANN")
     for trace in info["round_weight_trace"]:
         with np.load(Path(audit_dir) / trace["audit_file"],
                      allow_pickle=False) as arrays:
@@ -55,13 +64,16 @@ def smoke_test(split_dir, reference_dir, output_dir, audit_dir, *, seed=42):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--split-dir", required=True)
-    parser.add_argument("--reference-dir", required=True)
+    sources = parser.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--reference-dir")
+    sources.add_argument("--module3-dir")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--audit-dir", required=True)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     print(json.dumps(smoke_test(args.split_dir, args.reference_dir,
-                                args.output_dir, args.audit_dir, seed=args.seed),
+                                args.output_dir, args.audit_dir, seed=args.seed,
+                                module3_dir=args.module3_dir),
                      indent=2))
 
 

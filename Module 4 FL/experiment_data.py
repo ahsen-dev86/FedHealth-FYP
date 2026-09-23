@@ -18,7 +18,10 @@ def load_split_manifest(split_dir):
     split_dir = Path(split_dir).resolve()
     manifest = json.loads((split_dir / "split_manifest.json").read_text(
         encoding="utf-8"))
-    if manifest.get("purpose") != "module4_duplicate_aware_split":
+    if manifest.get("purpose") not in {
+        "module4_duplicate_aware_split",
+        "module4_saved_module3_ann_finetune_split",
+    }:
         raise ValueError("Not a Module 4 split manifest")
     for name, info in manifest["files"].items():
         if name == "locked_test":

@@ -12,8 +12,12 @@ from validation import evaluate_probabilities
 def final_evaluate(split_dir, model_dir, *, final_test=False):
     if not final_test:
         raise ValueError("Locked test requires explicit --final-test")
-    import tensorflow as tf
     split_dir, model_dir = Path(split_dir).resolve(), Path(model_dir).resolve()
+    split = json.loads((split_dir / "split_manifest.json").read_text(
+        encoding="utf-8"))
+    if split.get("purpose") != "module4_duplicate_aware_split":
+        raise ValueError("Saved Module 3 fine-tuning is not an independent locked-test experiment")
+    import tensorflow as tf
     experiment = json.loads((model_dir.parent / "results.json").read_text(
         encoding="utf-8"))
     if model_dir.name != experiment["integration_candidate"] or (
@@ -23,11 +27,11 @@ def final_evaluate(split_dir, model_dir, *, final_test=False):
     result_path = model_dir / "final_test_metrics.json"
     if result_path.exists():
         raise FileExistsError(f"Locked test was already recorded: {result_path}")
-    split = json.loads((split_dir / "split_manifest.json").read_text(
-        encoding="utf-8"))
     manifest = json.loads((model_dir / "manifest.json").read_text(
         encoding="utf-8"))
     run = manifest["run_info"]
+    if run.get("initial_model_source") == "saved_module3_ann":
+        raise ValueError("Saved Module 3 fine-tuning is not an independent locked-test experiment")
     if run["purpose"] != "module4_ann_federation" or (
         run["input_sha256"]["validation"] != split["files"]["validation"]["sha256"]
     ):

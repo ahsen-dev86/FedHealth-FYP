@@ -7,6 +7,57 @@ module neither trains nor aggregates XGBoost. Module 4's server sees plaintext
 weights. TLS protects transport; it does **not** make the server blind. Module 5
 is the separate encryption work.
 
+## Fine-tune the exact saved Module 3 ANN
+
+Use this path when the starting weights must come from Module 3's existing
+`ann.keras`. It also uses that model's `preprocessor.joblib`, verifies the class
+order in `meta.json`, and checks all three train/validation/test arrays in
+`arrays.npz` against a reconstruction of
+Module 3's seed-42 split. Run from the repository root with Module 4
+requirements installed:
+
+```bash
+python "Module 4 FL/make_module3_split.py" \
+  --csv anemia_diagnosed_cbc_data_v4.csv \
+  --module3-dir /content/drive/MyDrive/FYP/validation/module3/modelA \
+  --out /new/path/module3_finetune_split --labs 3 --alpha 0.5
+
+python "Module 4 FL/smoke_federation.py" \
+  --split-dir /new/path/module3_finetune_split \
+  --module3-dir /content/drive/MyDrive/FYP/validation/module3/modelA \
+  --output-dir /new/path/module3_smoke_model \
+  --audit-dir /new/path/module3_smoke_weights --seed 42
+
+python "Module 4 FL/run_simulation.py" \
+  --split-dir /new/path/module3_finetune_split \
+  --module3-dir /content/drive/MyDrive/FYP/validation/module3/modelA \
+  --output-dir /new/path/module3_finetuned_seed42 \
+  --init warm --rounds 20 --local-epochs 1 --seed 42
+```
+
+The smoke test checks that round 1 received the **exact saved Module 3 ANN
+weights**, verifies the three-client weighted average for both rounds, and
+checks the saved model after reload. The full run checks all 20 rounds and
+records the source ANN/preprocessor hashes, round-0 weights, each round's
+weights and validation metrics. Its top-level `ann.keras` is the selected
+validation round; if `selected_round` is 0, that file is still the starting
+model. `last_round/ann.keras` always contains the final aggregated weights for
+diagnosis, even if safety-based selection rejects that round.
+
+This is **fine-tuning a model that already trained on the 896 Module 3 training
+rows**. Its old validation set was used during Module 3 training, and identical
+CBC feature rows cross the old train/validation/test sets. The split manifest
+reports those overlaps. Scores from this path are engineering diagnostics, not
+an independent estimate of generalization or proof that labs contributed new
+patient information. `final_evaluate.py` deliberately rejects this split.
+Do not call the round-0 model a federated output. For an honest fresh-data
+evaluation, retrain Module 3 on a disjoint reference set or obtain genuinely
+new lab data and a clean external test set.
+
+The separate-reference experiment below is still available for comparison.
+It trains a **new** ANN on a small reference slice; it does not import Module 3's
+saved `ann.keras`.
+
 Run these commands from the repository root in a Python environment with
 `Module 4 FL/requirements.txt` installed. Every output path must be new.
 These commands use the canonical CSV shipped with the project. A changed dataset
