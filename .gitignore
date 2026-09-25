@@ -6,6 +6,14 @@ __pycache__/
 *.pyc
 .env
 .venv/
+.venv-*/
+artifacts/
+run-results/
+.pytest_cache/
+*.keras
+*.joblib
+*.npz
+certs/
 venv/
 node_modules/
 .DS_Store

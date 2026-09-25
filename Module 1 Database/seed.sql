@@ -83,16 +83,11 @@ ON CONFLICT (fl_client_id) DO NOTHING;
 -- metrics (per-class recall, macro-F1) and flip is_active on. Class keys are the
 -- snake_case condition names the model will score. 'healthy' is a real class.
 INSERT INTO ml_models (name, version, disease_scope, classes, metrics, calibration, is_active) VALUES
-    ('cbc_multiclass', 'v0.0.0-scaffold',
-     'CBC-based confidence scoring: anemia subtypes, leukemia, thrombocytopenia, healthy',
-     '["healthy","iron_deficiency_anemia","normocytic_hypochromic_anemia",
-       "normocytic_normochromic_anemia","other_microcytic_anemia","macrocytic_anemia",
-       "thrombocytopenia","leukemia","leukemia_with_thrombocytopenia"]'::jsonb,
-     '{}'::jsonb, NULL, FALSE),
-    ('thal_carrier', 'v0.0.0-scaffold',
-     'CBC-based alpha-thalassemia carrier confidence',
-     '["normal","alpha_carrier"]'::jsonb,
-     '{}'::jsonb, NULL, FALSE)
+    ('cbc_multiclass', 'v2-four-class-scaffold',
+     'CBC screening aid: healthy, anemia, thalassemia, leukemia; doctor confirmation required',
+     '["healthy","anemia","thalassemia","leukemia"]'::jsonb,
+     '{"features":["WBC","RBC","HGB","HCT","MCV","MCH","MCHC","RDW","PLT","NEUTp"],"status":"untrained"}'::jsonb,
+     NULL, FALSE)
 ON CONFLICT (name, version) DO NOTHING;
 
 

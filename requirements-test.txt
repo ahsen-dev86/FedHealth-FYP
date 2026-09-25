@@ -1,0 +1,5 @@
+-r Module 4 FL/requirements.txt
+flask==3.1.2
+pytest==8.4.2
+nbformat==5.10.4
+cryptography==44.0.3

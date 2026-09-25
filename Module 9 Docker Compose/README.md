@@ -1,21 +1,13 @@
-# Trained model artifacts
+# Four-class model integration
 
-Drop your Colab-trained artifacts here to activate the **real federated model**
-in the inference service (otherwise it serves the labelled sklearn fallback):
+Copy the selected complete hybrid `model/` directory to `models/cbc_multiclass/`.
+It must contain ann.keras, xgb.json, preprocessor.joblib, meta.json, manifest.json
+and reload_verified.json. Keep each bundle together; do not mix files from runs.
+Use the separate final-test metrics payload to register that exact version.
+There is one four-class model and no automatic inference fallback.
 
-```
-models/
-  cbc_multiclass/
-    preprocessor.joblib
-    ann.keras
-    xgb.json
-    meta.json
-    metrics.json          # optional; register via POST /models/register
-  thal_screen/            # once you have a beta-thal dataset (notebook 04)
-    ...
-```
-
-This folder is mounted read-only into the `inference` container at `/models`.
-To serve the real model you must also uncomment `tensorflow` + `xgboost` in
-`ml/inference_service/requirements.txt` (and rebuild), since the hybrid model
-needs them.
+The full-stack docker-compose.yml here is a historical assembly template with
+paths from the old generated layout. Full Module 9 assembly/deployment is separate
+from the Module 3/4 migration. For a current standalone federation development
+configuration use `Module 4 FL/compose.yml`, whose build context is the repo root.
+Check `docs/VERIFICATION.md` for whether a Docker runtime was available and tested.

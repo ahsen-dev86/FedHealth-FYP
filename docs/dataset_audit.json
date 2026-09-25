@@ -1,0 +1,81 @@
+{
+  "rows": 3200,
+  "features": [
+    "WBC",
+    "RBC",
+    "HGB",
+    "HCT",
+    "MCV",
+    "MCH",
+    "MCHC",
+    "RDW",
+    "PLT",
+    "NEUTp"
+  ],
+  "classes": [
+    "healthy",
+    "anemia",
+    "thalassemia",
+    "leukemia"
+  ],
+  "data_sha256": "ec5dba6d3a72ae479bac9856ed368128565596fa7353e733531b0c11ee29ff04",
+  "raw_data_sha256": "9a7fbe4d41b88103e56934e10d132aa4c9fdcaafcdc9f3c4014deb859e0437c5",
+  "provenance_sha256": "2237688f1f33a1929b2a6aed66acd2fe0c5ab38bc94e315b2a6137c9bbfdfbbc",
+  "split_counts": {
+    "test": {
+      "anemia": 120,
+      "healthy": 120,
+      "leukemia": 120,
+      "thalassemia": 120
+    },
+    "train": {
+      "anemia": 560,
+      "healthy": 560,
+      "leukemia": 560,
+      "thalassemia": 560
+    },
+    "val": {
+      "anemia": 120,
+      "healthy": 120,
+      "leukemia": 120,
+      "thalassemia": 120
+    }
+  },
+  "duplicate_feature_rows": 0,
+  "source_by_label": {
+    "anemia": {
+      "kaggle_anemia": 588,
+      "letslive": 0,
+      "leukoalert": 212,
+      "mendeley_thal": 0,
+      "plenoi": 0
+    },
+    "healthy": {
+      "kaggle_anemia": 165,
+      "letslive": 0,
+      "leukoalert": 407,
+      "mendeley_thal": 0,
+      "plenoi": 228
+    },
+    "leukemia": {
+      "kaggle_anemia": 54,
+      "letslive": 0,
+      "leukoalert": 746,
+      "mendeley_thal": 0,
+      "plenoi": 0
+    },
+    "thalassemia": {
+      "kaggle_anemia": 0,
+      "letslive": 143,
+      "leukoalert": 0,
+      "mendeley_thal": 272,
+      "plenoi": 385
+    }
+  },
+  "label_basis_counts": {
+    "clinical": 2309,
+    "range_rule": 619,
+    "hba2_rule": 272
+  },
+  "imputed_rows": 1692
+}

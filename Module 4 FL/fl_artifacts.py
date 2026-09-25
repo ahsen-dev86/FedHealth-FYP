@@ -1,73 +1,47 @@
-
-"""Save ANN-only artifacts and verify that they reload correctly."""
-import hashlib
-import json
+"""Persist the selected round with calibration and verified reload."""
 from pathlib import Path
-
 import numpy as np
-from fedhealth_ml import schema, preprocess as pp
+from fedhealth_ml import schema, models
+from fedhealth_ml.artifacts import save_bundle
+from fedhealth_ml.runtime import write_json
+from aggregation import weights_sha256
 
 
-def save_ann_checkpoint(model, preprocessor, output_dir, *, run_info):
-    import tensorflow as tf
-
-    assert list(preprocessor.features) == list(schema.MODEL_A_FEATURES)
-    assert model.input_shape == (None, len(schema.MODEL_A_FEATURES))
-    assert model.output_shape == (None, len(schema.MODEL_A_CLASSES))
-
-    weights = model.get_weights()
-    assert all(np.isfinite(w).all() for w in weights)
-
-    output_dir = Path(output_dir)
-    # Refuse to overwrite an existing checkpoint directory.
-    output_dir.mkdir(parents=True, exist_ok=False)
-
-    ann_path = output_dir / "federated_ann.keras"
-    prep_path = output_dir / "preprocessor.joblib"
-    model.save(ann_path)
-    preprocessor.save(prep_path)
-
-    restored = tf.keras.models.load_model(ann_path, compile=False)
-    restored_weights = restored.get_weights()
-    assert len(weights) == len(restored_weights)
-    for original, loaded in zip(weights, restored_weights):
-        np.testing.assert_array_equal(original, loaded)
-
-    # Synthetic scaled inputs test prediction consistency, not accuracy.
-    width = len(schema.MODEL_A_FEATURES)
-    probe = np.stack([
-        np.zeros(width), np.ones(width), -np.ones(width)
-    ]).astype("float32")
-    before = np.asarray(model(probe, training=False))
-    after = np.asarray(restored(probe, training=False))
-    assert np.isfinite(before).all() and np.isfinite(after).all()
-    np.testing.assert_allclose(before, after, rtol=1e-6, atol=1e-7)
-
-    restored_prep = pp.CBCPreprocessor.load(prep_path)
-    assert list(restored_prep.features) == list(preprocessor.features)
-    np.testing.assert_array_equal(
-        preprocessor.imputer.statistics_,
-        restored_prep.imputer.statistics_,
-    )
-    for attribute in ("mean_", "var_", "scale_", "n_samples_seen_"):
-        np.testing.assert_array_equal(
-            getattr(preprocessor.scaler, attribute),
-            getattr(restored_prep.scaler, attribute),
-        )
-
-    metadata = {
-        "artifact_type": "ann_only",
-        "features": list(schema.MODEL_A_FEATURES),
-        "classes": list(schema.MODEL_A_CLASSES),
-        "run_info": run_info,
-        "reload_verified": True,
-        "sha256": {
-            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in (ann_path, prep_path)
-        },
-    }
-    # Written last: its presence indicates the reload checks completed.
-    (output_dir / "checkpoint_metadata.json").write_text(
-        json.dumps(metadata, indent=2), encoding="utf-8"
-    )
-    return output_dir
+def finish_run(output, tracker, strategy, prep, initial_meta, model_dir, Xv, yv, settings, *, hybrid_train=None):
+    output = Path(output)
+    expected = list(range(settings["rounds"] + 1))
+    if [m["round"] for m in tracker.history] != expected or len(strategy.round_trace) != settings["rounds"]:
+        raise RuntimeError("Incomplete run; refuse to publish a selected checkpoint")
+    ann = tracker.model
+    ann.set_weights(tracker.best_weights)
+    if weights_sha256(ann.get_weights()) != tracker.best_sha256:
+        raise RuntimeError("Selected weights mismatch")
+    temp = models.TemperatureScaler().fit(np.asarray(ann(Xv, training=False)), yv)
+    hybrid_temp = models.TemperatureScaler()
+    hybrid_temp.T = temp.T
+    hybrid = models.HybridModel(ann, schema.CLASSES, temperature=hybrid_temp, version=f"v2-fl-seed{settings['seed']}-{settings['mode']}")
+    head = "none"
+    if hybrid_train is not None:
+        Xtr, ytr = hybrid_train
+        hybrid.fit_meta(Xtr, ytr, Xv, yv, seed=settings["seed"])
+        head = "centralized reference XGBoost refit after ANN selection; not federated"
+    info = {"data_sha256": initial_meta["data_sha256"], "provenance_sha256": initial_meta["provenance_sha256"],
+            "fit_row_ids": initial_meta["fit_row_ids"], "origin": "federated_finetune",
+            "training": settings, "selected_round": tracker.best_round,
+            "selected_weights_sha256": tracker.best_sha256, "round_zero_selected": tracker.best_round == 0,
+            "round_zero_weights_sha256": tracker.history[0]["weights_sha256"],
+            "selection": {"metric": "minimum validation log loss", "max_macro_f1_drop": tracker.max_macro_f1_drop,
+                          "max_extra_sick_healthy": tracker.max_extra_sick_healthy, "tie": "earliest round"},
+            "reference_head": head, "test_used": False}
+    save_bundle(output / "model", prep, hybrid, run_info=info, ann_temperature=temp.T,
+                preprocessor_source=Path(model_dir) / "preprocessor.joblib")
+    write_json(output / "round_history.json", {"data_sha256": info["data_sha256"], "validation": tracker.history,
+                                             "aggregation": strategy.round_trace, "selected_round": tracker.best_round})
+    from fedhealth_ml.metrics import evaluate
+    metrics = {"ann": evaluate(yv, temp.transform(np.asarray(ann(Xv, training=False))))}
+    if hybrid.xgb is not None:
+        metrics["hybrid"] = evaluate(yv, hybrid.predict_proba(Xv))
+    write_json(output / "validation_metrics.json", {"split": "val", "data_sha256": info["data_sha256"], "metrics": metrics})
+    write_json(output / "settings.json", settings)
+    print(f"Selected round {tracker.best_round} of {settings['rounds']}; test untouched.")
+    return output / "model"

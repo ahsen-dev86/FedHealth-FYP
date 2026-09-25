@@ -150,7 +150,7 @@ CREATE INDEX idx_lab_reports_lab     ON lab_reports (lab_id);
 -- the model has balanced recall across diseases (not just high overall accuracy).
 CREATE TABLE ml_models (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name          TEXT NOT NULL,               -- 'cbc_multiclass' | 'thal_carrier'
+    name          TEXT NOT NULL,               -- 'cbc_multiclass' (four-class screening)
     version       TEXT NOT NULL,               -- e.g. 'v1.0.0'
     disease_scope TEXT NOT NULL,               -- human-readable description
     classes       JSONB NOT NULL,              -- ordered condition keys, incl. 'healthy'

@@ -1,3 +1,6 @@
+# Historical full-stack assembly template; full Module 9 integration is separate.
+# For the current four-class Module 4 paths use ../Module 4 FL/compose.yml.
+# Inference now requires verified artifacts; there is no automatic training fallback.
 # docker-compose.yml — the whole FedHealth stack in one command.
 #
 #   Core app (DB + inference + backend + frontend):
@@ -45,12 +48,11 @@ services:
       context: .
       dockerfile: ml/inference_service/Dockerfile
     environment:
-      ANEMIA_CSV: /app/anemia_diagnosed_cbc_data_v4.csv
       MODELS_DIR: /models
       PORT: "8000"
     volumes:
       # Drop your Colab-trained artifacts here to activate the real model:
-      #   ./models/cbc_multiclass/{preprocessor.joblib,ann.keras,xgb.json,meta.json}
+      #   ./models/cbc_multiclass/{preprocessor.joblib,ann.keras,xgb.json,meta.json,manifest.json}
       - ./models:/models:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]

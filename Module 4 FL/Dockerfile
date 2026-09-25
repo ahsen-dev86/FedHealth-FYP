@@ -1,14 +1,11 @@
-# Build: docker build -f "Module 4 FL/Dockerfile" -t fedhealth-fl-server .
-FROM python:3.13-slim
+# Build context: repository root. Runtime arguments are explicit.
+FROM python:3.12-slim
 WORKDIR /app
-COPY ["Module 4 FL/requirements.txt", "/tmp/requirements.txt"]
-RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt
-COPY ["Module 3 ML/schema.py", "Module 3 ML/preprocess.py", "Module 3 ML/models.py", "Module 3 ML/rules.py", "/app/Module 3 ML/"]
-COPY ["Module 4 FL/", "/app/module4/"]
-WORKDIR /app/module4
-ENV PYTHONPATH=/app/module4
-ENV FL_BIND=0.0.0.0:8080 FL_ROUNDS=5 FL_LABS=3 LOCAL_EPOCHS=2
-ENV PREPROCESSOR=/artifacts/preprocessor.joblib INITIAL_MODEL=/artifacts/ann.keras
-VOLUME ["/artifacts", "/output"]
-EXPOSE 8080
-CMD ["python", "server.py", "--output-dir", "/output/federated_ann"]
+COPY ["Module 3 ML/requirements.txt", "/app/Module 3 ML/requirements.txt"]
+COPY ["Module 4 FL/requirements.txt", "/app/Module 4 FL/requirements.txt"]
+RUN python -m pip install --no-cache-dir -r "/app/Module 4 FL/requirements.txt"
+COPY ["fedhealth_ml/", "/app/fedhealth_ml/"]
+COPY ["Module 3 ML/", "/app/Module 3 ML/"]
+COPY ["Module 4 FL/", "/app/Module 4 FL/"]
+ENV PYTHONPATH=/app TF_CPP_MIN_LOG_LEVEL=2
+ENTRYPOINT ["python", "Module 4 FL/server.py"]
