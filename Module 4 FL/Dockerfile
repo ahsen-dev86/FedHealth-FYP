@@ -1,6 +1,7 @@
 # Build context: repository root. Runtime arguments are explicit.
 FROM python:3.12-slim
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
 COPY ["Module 3 ML/requirements.txt", "/app/Module 3 ML/requirements.txt"]
 COPY ["Module 4 FL/requirements.txt", "/app/Module 4 FL/requirements.txt"]
 RUN python -m pip install --no-cache-dir -r "/app/Module 4 FL/requirements.txt"

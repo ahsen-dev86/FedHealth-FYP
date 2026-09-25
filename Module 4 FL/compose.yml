@@ -18,7 +18,7 @@
         "--out",
         "/output/run",
         "--rounds",
-        "20",
+        "${FL_ROUNDS:-20}",
         "--insecure-dev"
       ],
       "volumes": [

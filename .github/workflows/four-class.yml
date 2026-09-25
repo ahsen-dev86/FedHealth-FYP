@@ -1,0 +1,57 @@
+name: Four-class ML and federation
+on:
+  pull_request:
+  push:
+    branches: [feat/four-class-ml-federation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TF_CPP_MIN_LOG_LEVEL: "2"
+      TF_ENABLE_ONEDNN_OPTS: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-test.txt
+            Module 3 ML/requirements.txt
+            Module 4 FL/requirements.txt
+      - run: python -m pip install -r requirements-test.txt
+      - run: python -m pip check
+      - run: python -m pytest -q
+      - run: node tools/test_prediction_service.cjs
+      - name: Train a small verification artifact (validation only)
+        run: python -m fedhealth_ml.training train --out artifacts/ci/central --epochs 2 --trees 8
+      - name: Verify separate-process TLS
+        run: python tools/verify_transport.py --model artifacts/ci/central/model --out artifacts/ci/tls
+      - name: Prepare Docker labs
+        run: python "Module 4 FL/prepare_labs.py" --model artifacts/ci/central/model --out artifacts/ci/labs
+      - name: Build and run three Docker labs for two rounds
+        shell: bash
+        run: |
+          export FEDHEALTH_MODEL_DIR="$PWD/artifacts/ci/central/model"
+          export FEDHEALTH_LABS_DIR="$PWD/artifacts/ci/labs"
+          export FEDHEALTH_OUTPUT_DIR="$PWD/artifacts/ci/docker-output"
+          export FL_ROUNDS=2
+          mkdir -p "$FEDHEALTH_OUTPUT_DIR"
+          docker compose -f "Module 4 FL/compose.yml" up --build -d
+          server=$(docker compose -f "Module 4 FL/compose.yml" ps -q fl-server)
+          exit_code=$(docker wait "$server")
+          docker compose -f "Module 4 FL/compose.yml" logs --no-color
+          test "$exit_code" = 0
+          test -f "$FEDHEALTH_OUTPUT_DIR/run/model/reload_verified.json"
+      - name: Stop test containers
+        if: always()
+        shell: bash
+        run: |
+          export FEDHEALTH_MODEL_DIR="$PWD/artifacts/ci/central/model"
+          export FEDHEALTH_LABS_DIR="$PWD/artifacts/ci/labs"
+          export FEDHEALTH_OUTPUT_DIR="$PWD/artifacts/ci/docker-output"
+          docker compose -f "Module 4 FL/compose.yml" down
