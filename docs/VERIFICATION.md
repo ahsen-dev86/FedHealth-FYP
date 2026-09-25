@@ -2,6 +2,9 @@
 
 Branch: `feat/four-class-ml-federation`. Checks use the new 3,200-row release.
 This report distinguishes execution evidence from work still requiring a runtime.
+The user-run Colab Module 3 audit, preprocessing and centralized validation are
+recorded separately in [COLAB_MODULE3_RUN_2026-09-26.md](COLAB_MODULE3_RUN_2026-09-26.md).
+Those scores differ from the local seed-42 run below and must not be combined.
 
 ## Executed checks
 
@@ -52,7 +55,7 @@ claimed. The historical full-stack assembly templates remain separate work.
 
 ## External acceptance gates
 
-- User-run Colab notebooks, frozen three-seed/20-round matrix and final test.
+- User-run Colab Module 4, frozen three-seed/20-round matrix and final test.
 - Fresh source-exclusion sensitivity analysis; report weaknesses honestly.
 - Docker build/run requires an available Docker engine. Static path checks are
   not a Docker execution result.
