@@ -15,20 +15,42 @@ def code(text):
 
 
 INSTALL = code('''
-    import sys, subprocess
+    import base64, os, sys, subprocess
     from pathlib import Path
     REPO = Path('/content/FedHealth-four-class')
     BRANCH = 'feat/four-class-ml-federation'
     if not REPO.exists():
-        subprocess.check_call(['git', 'clone', '--branch', BRANCH, '--single-branch',
-                               'https://github.com/ahsen-dev86/FedHealth-FYP.git', str(REPO)])
+        from google.colab import userdata
+        try:
+            token = userdata.get('GITHUB_TOKEN')
+        except Exception as exc:
+            raise RuntimeError('Add GITHUB_TOKEN in Colab Secrets and enable notebook access.') from exc
+        if not token:
+            raise RuntimeError('GITHUB_TOKEN is empty in Colab Secrets.')
+        credential = base64.b64encode(f'x-access-token:{token.strip()}'.encode()).decode()
+        env = os.environ.copy()
+        env['GIT_TERMINAL_PROMPT'] = '0'
+        env['GIT_CONFIG_COUNT'] = '1'
+        env['GIT_CONFIG_KEY_0'] = 'http.https://github.com/.extraheader'
+        env['GIT_CONFIG_VALUE_0'] = f'AUTHORIZATION: basic {credential}'
+        result = subprocess.run(
+            ['git', 'clone', '--branch', BRANCH, '--single-branch',
+             'https://github.com/ahsen-dev86/FedHealth-FYP.git', str(REPO)],
+            env=env, text=True, capture_output=True,
+        )
+        if result.returncode:
+            raise RuntimeError(f'Git clone failed:\\n{result.stderr.strip()}')
     else:
+        if not (REPO / '.git').is_dir():
+            raise RuntimeError(f'{REPO} exists but is not a Git checkout')
         branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
         if branch != BRANCH:
             raise RuntimeError(f'Use a fresh runtime: existing checkout is {branch}')
+    print('Branch:', BRANCH)
+    print('Commit:', subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', '--short', 'HEAD'], text=True).strip())
     assert (3, 11) <= sys.version_info[:2] <= (3, 13), 'Use Python 3.11–3.13 (verified locally on 3.12)'
     subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-r', str(REPO / 'Module 4 FL/requirements.txt')])
-    print('Dependencies installed. If Colab requests a restart, restart now, then run the next cell.')
+    print('Dependencies installed. Restart the Colab session after the first install, then continue.')
 ''')
 SETUP = code('''
     from pathlib import Path
