@@ -1,8 +1,6 @@
 name: Four-class ML and federation
+# Heavy runtime checks are manual only, as requested.
 on:
-  pull_request:
-  push:
-    branches: [feat/four-class-ml-federation]
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,6 +19,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements-test.txt
+            requirements-ml.txt
             Module 3 ML/requirements.txt
             Module 4 FL/requirements.txt
       - run: python -m pip install -r requirements-test.txt

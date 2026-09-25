@@ -39,8 +39,9 @@ The full protocol stopped at 59 epochs (maximum 100, patience 10). These are
 | Random forest | 0.8729 | 0.8728 | 0.8333 |
 
 The hybrid works, but did not improve on the ANN in this run. This negative
-comparison is retained. The complete three-seed federation matrix is running;
-its measured summary will be added when finished. Local artifacts and logs are
+comparison is retained. The remaining three-seed federation matrix was stopped at the user's request.
+Completed validation runs are recorded in `local_validation_completed.json`;
+incomplete runs are not counted as results. Local artifacts and logs are
 under `run-results/verification/` and are excluded from Git.
 
 ## Docker boundary
@@ -59,3 +60,11 @@ claimed. The historical full-stack assembly templates remain separate work.
   separate work and are not claimed by Module 3/4 tests.
 
 No medical accuracy, clinical stability or improvement over round 0 is guaranteed.
+
+## Final boundary requested by the user
+
+Further training was stopped. No additional model runs will be started here.
+The automated heavy workflow is now manual-only. Its initial GitHub runs failed
+at dependency installation, before training; they are not a Linux/Docker pass.
+Requirements includes were simplified to paths without spaces. The final code
+and notebook checks remain separate from user-run Colab acceptance.

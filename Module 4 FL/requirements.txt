@@ -1,4 +1,4 @@
--r ../Module 3 ML/requirements.txt
+-r ../requirements-ml.txt
 flwr==1.24.0
 grpcio==1.84.0
 protobuf==5.29.6

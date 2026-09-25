@@ -25,6 +25,6 @@ No clinical accuracy, privacy proof or improvement from federation is assumed.
 
 The new schema, data flow, model bundles, four Colab notebooks, federation,
 inference/registry consumers and documentation are implemented. The 33-test
-suite and real separate-process TLS smoke pass. The full three-seed validation
-matrix is running. See `docs/VERIFICATION.md` for measured results and remaining
+suite and real separate-process TLS smoke pass. The remaining three-seed validation
+matrix was stopped at the user's request; completed runs are recorded separately. See `docs/VERIFICATION.md` for measured results and remaining
 manual Colab/Docker/encryption acceptance gates.
