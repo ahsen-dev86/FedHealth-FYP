@@ -65,7 +65,7 @@ Phase B:
 | 2 | The Vite `/api` proxy did not strip `/api`, so **every real request in development got 404**: the real frontend had never worked against the backend | Proxy rewrite, like Module 9's nginx |
 | 3 | A developer `.env.local` with `VITE_USE_MOCK=true` silently turned `npm run dev` and the live tests into the mock (a live test "saw" mock scores) | Test servers and the run script set `VITE_USE_MOCK` explicitly; live tests assert no mock banner |
 | 4 | NIH map plotted `approx_lat/lng`, which the API never returned: no real cluster could appear | API returns centroid rounded to 0.01°, exact centroid removed; doctor picks a district with district-level coordinates |
-| 5 | Model Health showed an invented "CBC-Net v1.0.0-preview 0.87/0.91", Paillier for every run, hospital-named nodes with fake up/down status | Real registry, measured metrics, limitations panel, per-run encryption truth, lab-00..lab-04 partitions; no-data charts labelled "Sample data" |
+| 5 | Model Health showed an invented "CBC-Net v1.0.0-preview 0.87/0.91", Paillier for every run, hospital-named nodes with fake up/down status | Real registry, measured metrics, per-run encryption truth, lab-00..lab-04 partitions; no-data charts labelled "Sample data" (a limitations panel was added, then removed from the page at the author's request: limitations are reported in the written documentation; the data stays available at `/model-health/limitations`) |
 | 6 | Image OCR impossible (no engine); the old wrapper built a shell command from request input | Tesseract 5.4 installed; called with `execFile` (no shell); `lang` validated; image preprocessing (sharp) |
 | 7 | At scan size tesseract read RBC 4.47 as 447 | Upscale/greyscale/normalise before OCR: rendered report reads 10/10; degraded scan 9/10 with the misread caught by the range check |
 | 8 | Malformed ids (`/predictions/abc/confirm`) reached SQL → **500**; upload errors → 500; unexpected 500s leaked internal messages | UUID param guards (400), multer/body-parser/SQLSTATE mapping, generic 500 body |
@@ -90,7 +90,7 @@ Phase B:
 | Model Health → intake breakdowns | Only when no reports exist in the window | "Sample data" badge |
 | Mock mode (`-Mock`) | No backend | "Demo mode — mock API" banner; prediction scores say they are not from the model; Model Health uses a snapshot of the real registry/runs |
 
-Real data everywhere else: registered model and test metrics, limitations, per-round validation
+Real data everywhere else: registered model and test metrics, per-round validation
 curves of all 13 runs, runs table, encryption per run, lab partitions and training rows, training-data
 class/source counts, predictions served/average latency/reports, NIH clusters and alerts, audit chain.
 
@@ -141,4 +141,6 @@ types, NaN, 70 KB body, unknown route, wrong method. Latest result: **133 of 133
   `init/009`–`010`, `TRUST_PROXY`, tesseract in the image).
 - The local database holds test records from acceptance/robustness/Playwright runs (`e2e-*`).
   Clean slate: `node scripts/db-setup.js --reset`, then `run-local.ps1 -Setup` and `npm run demo:users`.
+- Help Portal content is sample data (`npm run demo:help`: five fictional NGOs marked "(sample)", not
+  verified, example.org sites, no-password accounts).
 - `Module 1 Database`, `Module 7 Doctor Portal`, `Module 8 NIH Dashboard` are superseded copies (marked).

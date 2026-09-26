@@ -115,7 +115,7 @@ export default function SurveillanceDashboard() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-2">
               {err && <p className="mb-2 text-sm text-destructive">{err}</p>}
               {clusters == null
                 ? <p className="text-sm text-muted-foreground">Loading map…</p>

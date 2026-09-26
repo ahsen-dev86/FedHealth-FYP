@@ -80,9 +80,12 @@ scanned with an authenticator app; below it is the key for `node scripts/totp-co
    the form is valid; the API and database reject the same things independently.
 4. **NIH official** → Surveillance: clusters by district and condition, alerts (a leukemia score
    ≥ 30% raises one), Compliance tab (audit chain verified). → **AI Model Health**: registered
-   model and its measured test results, *Known limitations* (unseen-source accuracy 29–87%,
-   federation kept round 0 in 9 of 12 runs), federated runs per round, encryption per run
+   model and its measured test results, federated runs per round, encryption per run
    (12 plaintext, 1 Paillier-2048), charts marked **Sample data** where no real data exists.
+   (Known limitations are in the written report, not on this page.)
+5. **Help Portal** (<http://localhost:5173/help>, no login): five sample NGOs with supply requests.
+   They are marked "(sample)"; if the portal is ever empty run `npm run demo:help` in
+   `Module 1-2 Merged Backend`.
 
 ## 4. Stop FedHealth
 
@@ -117,7 +120,7 @@ The API tests create throwaway `e2e-*` accounts and records each run; that is ex
 | Login page: "Cannot reach the FedHealth server" | The backend is not running: start FedHealth (step 1). |
 | "The analysis service is not reachable" after *Analyze CBC* | The AI model service stopped: `-Stop` then `-Start -Frontend`; check `run-results\logs\inference.log`. |
 | Database errors / backend exits at start | Services → `postgresql-x64-18` must be *Running* (Start it). |
-| MFA code rejected | Codes last 30 s; run `npm run demo:code` again. Check the laptop clock is correct. |
+| MFA code rejected | Codes change every 30 s (the key stays the same; keep the authenticator time-based, not counter-based). Use the code on screen now, or `npm run demo:code`. If fresh codes fail, turn on automatic date/time on the phone and laptop. |
 | "Too many attempts" at login | Security rate limit (30 tries per 15 min). Wait 15 minutes. |
 | Account locked after wrong passwords | Wait 15 minutes, or `npm run demo:users -- --reset` for the demo accounts. |
 | Scores look random and a "Demo mode — mock API" badge shows | The site runs the mock: stop it and start with the script (not `npm run dev`). |
@@ -137,4 +140,4 @@ The API tests create throwaway `e2e-*` accounts and records each run; that is ex
    `PG_SUPERUSER_PASSWORD=<your postgres password>`.
 4. `powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 -Setup` (creates the database,
    applies the migrations, registers the model, imports the federated runs), then
-   `cd "Module 1-2 Merged Backend"; npm run demo:users`, then start as in step 1.
+   `cd "Module 1-2 Merged Backend"; npm run demo:users; npm run demo:help`, then start as in step 1.

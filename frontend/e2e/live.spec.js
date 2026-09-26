@@ -97,7 +97,7 @@ test.describe.serial('live stack', () => {
     await nih.goto('/model-health');
     await expect(nih.getByTestId('model-card')).toContainText('v2-four-class-seed42-b24108b19482', { timeout: 20000 });
     await expect(nih.getByTestId('stat-accuracy')).toHaveText('88.8%');
-    await expect(nih.getByTestId('limitations-panel')).toContainText('Unseen-source accuracy: 29%–87%');
+    await expect(nih.getByText('Known limitations')).toHaveCount(0);
     await expect(nih.getByTestId('encryption-card')).toContainText('12 plaintext runs');
     await expect(nih.getByTestId('encryption-card')).toContainText('Paillier 2048-bit');
     await expect(nih.getByTestId('sample-node-status')).toContainText('Sample data');
@@ -106,5 +106,13 @@ test.describe.serial('live stack', () => {
     await expect(nih.locator('table').first()).toContainText('Anemia');
     await expect(nih.locator('body')).not.toContainText(OLD_LABELS);
     await nih.close();
+  });
+
+  test('public Help Portal lists the sample NGOs and supply requests', async () => {
+    const visitor = await page.context().browser().newPage({ baseURL });
+    await visitor.goto('/help');
+    await expect(visitor.getByText('Roshni Thalassemia Care (sample)').first()).toBeVisible({ timeout: 20000 });
+    await expect(visitor.getByText('O- units needed for the transfusion ward').first()).toBeVisible();
+    await visitor.close();
   });
 });

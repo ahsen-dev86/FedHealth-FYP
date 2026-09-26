@@ -45,37 +45,41 @@ export default function ClusterMap({ clusters, mode = 'markers' }) {
     return [p.lat, p.lng, Math.min(1, p.cases / 10)]; // intensity capped at 10 cases
   });
 
+  // Leaflet stacks its panes at z-index 400-1000; isolating the map in its own
+  // stacking context keeps it below the filter dropdowns (z-50, portaled to body).
   return (
-    <MapContainer center={PK_CENTER} zoom={5} scrollWheelZoom
-                  style={{ height: 440, width: '100%', borderRadius: 10 }}>
-      <TileLayer
-        attribution='&copy; OpenStreetMap contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+    <div className="relative isolate z-0" data-testid="cluster-map">
+      <MapContainer center={PK_CENTER} zoom={5} scrollWheelZoom
+                    style={{ height: 440, width: '100%', borderRadius: 10 }}>
+        <TileLayer
+          attribution='&copy; OpenStreetMap contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-      {mode === 'heat'
-        ? <HeatLayer points={heatPoints} />
-        : rows.map((c, i) => {
-            const p = pt(c);
-            return (
-              <CircleMarker key={i} center={[p.lat, p.lng]}
-                radius={Math.max(6, Math.min(30, 5 + p.cases * 2))}
-                pathOptions={{
-                  color: p.highRisk > 0 ? CLASS_HEX.leukemia : (CLASS_HEX[c.condition] || '#0E7C7B'),
-                  fillColor: CLASS_HEX[c.condition] || '#0E7C7B',
-                  fillOpacity: 0.45, weight: p.highRisk > 0 ? 3 : 1.5,
-                }}>
-                <Popup>
-                  <strong>{c.district || 'Unknown district'}</strong>
-                  {c.province ? `, ${c.province}` : ''}<br />
-                  {conditionLabel(c.condition)}<br />
-                  <span style={{ fontFamily: 'monospace' }}>
-                    {p.cases} screening result{p.cases === 1 ? '' : 's'} · {p.highRisk} risk flag{p.highRisk === 1 ? '' : 's'}<br />
-                    avg top score {Math.round(p.conf * 100)}%
-                  </span>
-                </Popup>
-              </CircleMarker>
-            );
-          })}
-    </MapContainer>
+        {mode === 'heat'
+          ? <HeatLayer points={heatPoints} />
+          : rows.map((c, i) => {
+              const p = pt(c);
+              return (
+                <CircleMarker key={i} center={[p.lat, p.lng]}
+                  radius={Math.max(6, Math.min(30, 5 + p.cases * 2))}
+                  pathOptions={{
+                    color: p.highRisk > 0 ? CLASS_HEX.leukemia : (CLASS_HEX[c.condition] || '#0E7C7B'),
+                    fillColor: CLASS_HEX[c.condition] || '#0E7C7B',
+                    fillOpacity: 0.45, weight: p.highRisk > 0 ? 3 : 1.5,
+                  }}>
+                  <Popup>
+                    <strong>{c.district || 'Unknown district'}</strong>
+                    {c.province ? `, ${c.province}` : ''}<br />
+                    {conditionLabel(c.condition)}<br />
+                    <span style={{ fontFamily: 'monospace' }}>
+                      {p.cases} screening result{p.cases === 1 ? '' : 's'} · {p.highRisk} risk flag{p.highRisk === 1 ? '' : 's'}<br />
+                      avg top score {Math.round(p.conf * 100)}%
+                    </span>
+                  </Popup>
+                </CircleMarker>
+              );
+            })}
+      </MapContainer>
+    </div>
   );
 }

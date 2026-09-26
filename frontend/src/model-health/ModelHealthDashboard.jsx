@@ -1,7 +1,7 @@
 // frontend/src/model-health/ModelHealthDashboard.jsx
 // AI Model Health (NIH/admin tier, 'nih:dashboard'). Shows the REGISTERED model
-// and its measured test results, the known limitations, the imported federated
-// runs (validation per round), encryption per run, the FL lab partitions and
+// and its measured test results, the imported federated runs (validation per
+// round), encryption per run, the FL lab partitions and
 // what they held, the training data, and this deployment's live intake.
 // Everything is aggregate. Charts without a real source are labelled
 // "Sample data" (see sampleData.js); nothing illustrative is shown unlabelled.
@@ -14,7 +14,6 @@ import {
 } from '../components/ui/select';
 import { pct1 } from '../lib/format';
 import ModelCard from './ModelCard';
-import LimitationsPanel from './LimitationsPanel';
 import AccuracyChart from './AccuracyChart';
 import EncryptionStatusCard from './EncryptionStatusCard';
 import FederatedRunsTable from './FederatedRunsTable';
@@ -53,7 +52,6 @@ export default function ModelHealthDashboard() {
   const [contribution, setContribution] = useState(null);
   const [trainingData, setTrainingData] = useState(null);
   const [encryption, setEncryption] = useState(null);
-  const [limitations, setLimitations] = useState(null);
   const [intake, setIntake] = useState(null);
   const [days, setDays] = useState('30');
   const [err, setErr] = useState('');
@@ -66,7 +64,6 @@ export default function ModelHealthDashboard() {
     api.get('/model-health/node-contribution').then(setContribution).catch(() => setContribution([]));
     api.get('/model-health/training-data').then(setTrainingData).catch(() => setTrainingData(null));
     api.get('/model-health/encryption').then(setEncryption).catch(() => setEncryption({}));
-    api.get('/model-health/limitations').then(setLimitations).catch(() => setLimitations({}));
   }, []);
 
   useEffect(() => {
@@ -106,29 +103,23 @@ export default function ModelHealthDashboard() {
                   sub={summary?.avgInferenceMs != null ? `avg ${summary.avgInferenceMs} ms · ${summary.totalLabReports} reports` : undefined} />
       </div>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[1.25fr_1fr]">
+      <div className="grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader><CardTitle>Registered model</CardTitle></CardHeader>
           <CardContent><ModelCard model={model} /></CardContent>
-        </Card>
-        <Card className="border-warning/40">
-          <CardHeader><CardTitle>Known limitations</CardTitle></CardHeader>
-          <CardContent><LimitationsPanel data={limitations} /></CardContent>
-        </Card>
-      </div>
-
-      <div className="mt-5 grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Validation accuracy & loss per federated round</CardTitle>
-          </CardHeader>
-          <CardContent><AccuracyChart history={history} runId={runId} onRunChange={setRunId} /></CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle>Encryption of federated updates</CardTitle></CardHeader>
           <CardContent><EncryptionStatusCard status={encryption} /></CardContent>
         </Card>
       </div>
+
+      <Card className="mt-5">
+        <CardHeader>
+          <CardTitle>Validation accuracy & loss per federated round</CardTitle>
+        </CardHeader>
+        <CardContent><AccuracyChart history={history} runId={runId} onRunChange={setRunId} /></CardContent>
+      </Card>
 
       <Card className="mt-5">
         <CardHeader>
