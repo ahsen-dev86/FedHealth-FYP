@@ -1,14 +1,17 @@
 // frontend/src/doctor/DoctorPortal.jsx
-// The point-of-care workspace. Left column = intake (patient + CBC + OCR +
-// symptoms); right column = the model's confidence readout, rule flag, doctor
-// confirmation, and the patient's longitudinal trends. Mirrors the scope mockup.
-import { useState } from 'react';
+// The point-of-care workspace. Left column = intake (patient context + the 10
+// CBC values with their units + OCR + symptoms); right column = the model's
+// screening readout, doctor confirmation, and the patient's longitudinal trends.
+// Only the CBC values reach the model; everything else is context.
+import { useMemo, useState } from 'react';
 import { api } from '../api/client';
 import CbcForm from './CbcForm';
 import OcrUpload from './OcrUpload';
 import SymptomIntake from './SymptomIntake';
 import PredictionResult from './PredictionResult';
 import PatientHistory from './PatientHistory';
+import { FEATURES, UNIT_OPTIONS, validateCbc, unitFactor } from '../lib/contract';
+import { DISTRICTS, findDistrict } from '../lib/districts';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -20,56 +23,73 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 
-const EMPTY_META = {
-  patientRef: '', sex: '', ageYears: '',
-  district: '', province: '', latitude: '', longitude: '',
-};
+const EMPTY_META = { patientRef: '', sex: '', ageYears: '', district: '' };
+const CANONICAL = Object.fromEntries(FEATURES.map((f) => [f, UNIT_OPTIONS[f][0].value]));
+const NATIVE_SELECT = 'h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm text-foreground outline-none '
+  + 'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30';
+
+function ContextNote() {
+  return <span className="font-normal text-muted-foreground">(context, not used by the model)</span>;
+}
 
 export default function DoctorPortal() {
   const [meta, setMeta] = useState(EMPTY_META);
   const [cbc, setCbc] = useState({});
+  const [units, setUnits] = useState(CANONICAL);
+  const [printedUnits, setPrintedUnits] = useState({});
+  const [source, setSource] = useState('manual');
   const [symptomsText, setSymptomsText] = useState('');
   const [symptomTags, setSymptomTags] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const [historyKey, setHistoryKey] = useState(0); // bump to refetch after predict
 
+  const validation = useMemo(() => validateCbc(cbc, units), [cbc, units]);
   const setMetaField = (k) => (e) => setMeta({ ...meta, [k]: e.target.value });
 
-  // Merge OCR-extracted values into the form (as strings for the inputs).
-  function applyOcr(extracted) {
-    const asStrings = Object.fromEntries(Object.entries(extracted).map(([k, v]) => [k, String(v)]));
-    setCbc((c) => ({ ...c, ...asStrings }));
-  }
-
-  // Convert the string CBC form into numbers, dropping blanks.
-  function numericCbc() {
-    const out = {};
-    for (const [k, v] of Object.entries(cbc)) {
-      if (v !== '' && v != null && !Number.isNaN(Number(v))) out[k] = Number(v);
+  // Merge OCR output: values as printed plus the printed unit when the API accepts it.
+  function applyOcr(r) {
+    const values = Object.fromEntries(Object.entries(r.cbc || {}).map(([k, v]) => [k, String(v)]));
+    const nextUnits = { ...units };
+    for (const [f, unit] of Object.entries(r.units || {})) {
+      nextUnits[f] = unit && unitFactor(f, unit) !== null ? unit : '';
     }
-    return out;
+    setCbc((c) => ({ ...c, ...values }));
+    setUnits(nextUnits);
+    setPrintedUnits(Object.fromEntries(Object.entries(r.units || {}).filter(([, u]) => u)));
+    setSource('ocr');
+    setShowErrors(true);
   }
 
   async function predict() {
     setError('');
-    const cbcNums = numericCbc();
+    setShowErrors(true);
     if (!meta.patientRef.trim()) { setError('Enter a patient reference.'); return; }
-    if (Object.keys(cbcNums).length === 0) { setError('Enter at least one CBC value (or scan a report).'); return; }
-
+    if (Object.keys(validation.errors).length) {
+      setError('Fix the highlighted CBC values or units first.');
+      return;
+    }
+    if (Object.keys(validation.values).length === 0) {
+      setError('Enter at least one CBC value (or scan a report).');
+      return;
+    }
+    const place = findDistrict(meta.district);
     setBusy(true);
     try {
       const payload = {
         patientRef: meta.patientRef.trim(),
         sex: meta.sex || undefined,
         ageYears: meta.ageYears ? Number(meta.ageYears) : undefined,
-        district: meta.district || undefined,
-        province: meta.province || undefined,
-        latitude: meta.latitude ? Number(meta.latitude) : undefined,
-        longitude: meta.longitude ? Number(meta.longitude) : undefined,
+        district: place?.district,
+        province: place?.province,
+        latitude: place?.latitude,
+        longitude: place?.longitude,
         symptomsText: symptomsText || undefined,
-        cbc: cbcNums,
+        source,
+        cbc: validation.values,
+        units: validation.units,
       };
       const r = await api.post('/predict', payload);
       setResult(r);
@@ -82,7 +102,7 @@ export default function DoctorPortal() {
   }
 
   async function confirmDiagnosis(predictionId, condition, notes) {
-    await api.post(`/predictions/${predictionId}/confirm`, { confirmedCondition: condition, notes });
+    await api.post(`/predictions/${predictionId}/confirm`, { confirmedCondition: condition, notes: notes || undefined });
   }
 
   return (
@@ -104,7 +124,7 @@ export default function DoctorPortal() {
             </div>
             <div className="mt-3.5 grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Sex</Label>
+                <Label>Sex <ContextNote /></Label>
                 <Select value={meta.sex} onValueChange={(v) => setMeta((m) => ({ ...m, sex: v }))}>
                   <SelectTrigger className="w-full"><SelectValue placeholder="—" /></SelectTrigger>
                   <SelectContent>
@@ -115,30 +135,36 @@ export default function DoctorPortal() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="ageYears">Age</Label>
+                <Label htmlFor="ageYears">Age <ContextNote /></Label>
                 <Input id="ageYears" inputMode="numeric" value={meta.ageYears} onChange={setMetaField('ageYears')} />
               </div>
             </div>
-            <div className="mt-3.5 grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="district">District</Label>
-                <Input id="district" value={meta.district} onChange={setMetaField('district')} placeholder="e.g. Lahore" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="province">Province</Label>
-                <Input id="province" value={meta.province} onChange={setMetaField('province')} placeholder="e.g. Punjab" />
-              </div>
+            <div className="mt-3.5 space-y-1.5">
+              <Label htmlFor="district">District <ContextNote /></Label>
+              <select id="district" className={NATIVE_SELECT} value={meta.district} onChange={setMetaField('district')}>
+                <option value="">Not recorded</option>
+                {DISTRICTS.map((d) => (
+                  <option key={d.district} value={d.district}>{d.district} ({d.province})</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">Used only for aggregated NIH surveillance at district level.</p>
             </div>
 
             <Separator className="my-4" />
-            <div className="mb-2.5 flex items-center justify-between">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">CBC values</div>
+            <div className="mb-2.5 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">CBC values (model inputs)</div>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Enter each value with the unit printed on the report.</p>
+              </div>
               <OcrUpload onExtract={applyOcr} />
             </div>
-            <CbcForm cbc={cbc} setCbc={setCbc} />
+            <CbcForm cbc={cbc} setCbc={setCbc} units={units} setUnits={setUnits} printedUnits={printedUnits}
+                     validation={showErrors ? validation : { canonical: validation.canonical }} />
 
             <Separator className="my-4" />
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-primary">Symptoms</div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-primary">
+              Symptoms <ContextNote />
+            </div>
             <SymptomIntake value={symptomsText} onChange={setSymptomsText}
                            tags={symptomTags}
                            onParsed={(r) => setSymptomTags(r.tags || [])} />
@@ -161,9 +187,10 @@ export default function DoctorPortal() {
             <CardHeader><CardTitle>Assessment</CardTitle></CardHeader>
             <CardContent>
               {result
-                ? <PredictionResult result={result} onConfirm={confirmDiagnosis} />
-                : <p className="text-sm text-muted-foreground">Enter a CBC and select <strong className="font-medium text-foreground">Analyze CBC</strong> to see calibrated
-                    condition confidences and the thalassemia-trait screen.</p>}
+                ? <PredictionResult key={result.prediction?.id} result={result} onConfirm={confirmDiagnosis} />
+                : <p className="text-sm text-muted-foreground">Enter a CBC and select <strong className="font-medium text-foreground">Analyze CBC</strong> to
+                    see the model's calibrated confidence for healthy, anemia, thalassemia and leukemia. The result is
+                    screening support; you confirm the diagnosis.</p>}
             </CardContent>
           </Card>
 
