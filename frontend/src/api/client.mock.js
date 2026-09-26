@@ -7,8 +7,15 @@
 // imports by hand.
 //
 // Same api.get/post/upload + setTokenGetter shape as the real client, so
-// every page component works unmodified against it.
+// every page component works unmodified against it. Responses follow the
+// real API shapes and the four-class contract; prediction scores are NOT from
+// the model (the response says so), and Model Health uses a snapshot of the
+// real registry/run records (modelHealthSnapshot.json).
 import qrcodegen from 'qrcode-generator';
+import {
+  contract, CLASSES, FEATURES, CANONICAL_UNITS, validateCbc,
+} from '../lib/contract.js';
+import modelHealthSnapshot from './modelHealthSnapshot.json' with { type: 'json' };
 
 const delay = (ms = 350) => new Promise((res) => setTimeout(res, ms));
 
@@ -26,9 +33,9 @@ function roleFromEmail(email) {
   return 'doctor';
 }
 function permsForRole(role) {
-  if (role === 'nih_official') return ['nih:dashboard'];
+  if (role === 'nih_official') return ['nih:dashboard', 'nih:alerts', 'audit:read'];
   if (role === 'ngo') return ['help:manage_own'];
-  return ['prediction:create'];
+  return ['report:create', 'report:read', 'prediction:create', 'prediction:read', 'prediction:confirm'];
 }
 
 // ---- real TOTP (RFC 6238, SHA-1, 6 digits, 30s step) ------------------------
@@ -141,89 +148,86 @@ function startDemoCodeLogging(secretBytes) {
 }
 
 // ---- dummy CBC / prediction data -------------------------------------------
-const CONDITIONS = [
-  'healthy', 'iron_deficiency_anemia', 'normocytic_hypochromic_anemia',
-  'macrocytic_anemia', 'thrombocytopenia', 'leukemia', 'beta_thal_trait',
-];
+// Mock predictions follow the real contract (4 classes, 10 CBC values with units,
+// same validation and error wording) but the SCORES ARE NOT FROM THE MODEL:
+// they are a deterministic function of the input, and the response says so.
+const MOCK_NOTE = 'Demo mode (mock API): these scores are not produced by the model.';
 
-function randomScores() {
-  const raw = CONDITIONS.map(() => Math.random() ** 2);
+function hashScores(canonical) {
+  let seed = 7;
+  for (const f of FEATURES) seed = (seed * 31 + Math.round((canonical[f] ?? 0) * 100)) % 1000003;
+  const raw = CLASSES.map((_, i) => ((seed >> (i * 3)) % 97 + 3) ** 2);
   const sum = raw.reduce((a, b) => a + b, 0);
-  return Object.fromEntries(CONDITIONS.map((c, i) => [c, +(raw[i] / sum).toFixed(3)]));
+  return Object.fromEntries(CLASSES.map((c, i) => [c, raw[i] / sum]));
 }
 
 let predictionSeq = 1;
-const predictionsById = new Map();
+const reportsByPatient = new Map();
+
+function mockError(status, message) {
+  const e = new Error(message);
+  e.status = status;
+  return e;
+}
 
 function makePatientHistory(patientRef) {
   const n = 4 + (patientRef.length % 4);
-  const base = { HGB: 13.5, MCV: 88, PLT: 260, WBC: 7.2, RBC: 4.8, MCH: 29 };
   const out = [];
   const now = Date.now();
   for (let i = n - 1; i >= 0; i--) {
     const drift = (n - 1 - i) * 0.4;
+    const cbc = {
+      WBC: +(7.2 + ((i * 3) % 5) / 10).toFixed(2), RBC: +(4.8 - drift * 0.05).toFixed(2),
+      HGB: +(13.5 - drift * 0.3).toFixed(1), HCT: +(41 - drift).toFixed(1), MCV: +(88 - drift * 0.6).toFixed(1),
+      MCH: +(29 - drift * 0.2).toFixed(1), MCHC: 33, RDW: +(13 + drift * 0.2).toFixed(1),
+      PLT: Math.round(260 - drift * 8), NEUTp: 60,
+    };
+    const scores = hashScores(cbc);
+    const top = CLASSES.reduce((a, b) => (scores[a] >= scores[b] ? a : b));
     out.push({
-      id: `${patientRef}-${i}`,
-      collected_at: new Date(now - i * 30 * 86400000).toISOString(),
-      cbc: {
-        HGB: +(base.HGB - drift * 0.3 + (Math.random() - 0.5)).toFixed(1),
-        MCV: +(base.MCV - drift * 0.6 + (Math.random() - 0.5) * 2).toFixed(1),
-        PLT: Math.round(base.PLT - drift * 8 + (Math.random() - 0.5) * 20),
-        WBC: +(base.WBC + (Math.random() - 0.5)).toFixed(1),
-        RBC: +(base.RBC - drift * 0.05).toFixed(2),
-        MCH: +(base.MCH - drift * 0.2).toFixed(1),
-      },
+      id: `${patientRef}-${i}`, collected_at: new Date(now - i * 30 * 86400000).toISOString(),
+      cbc, cbc_units: CANONICAL_UNITS, source: 'manual',
+      prediction: { id: `mock-${i}`, scores, top_condition: top, top_confidence: scores[top], risk_flag: false,
+                    imputed_features: [], confirmed_condition: null, model_name: 'cbc_multiclass', model_version: 'mock' },
     });
   }
-  return out;
+  return [...out, ...(reportsByPatient.get(patientRef) || [])];
 }
 
 // ---- dummy surveillance data -------------------------------------------------
-const DISTRICTS = [
-  { district: 'Lahore', province: 'Punjab', approx_lat: 31.55, approx_lng: 74.34 },
-  { district: 'Faisalabad', province: 'Punjab', approx_lat: 31.42, approx_lng: 73.08 },
-  { district: 'Karachi East', province: 'Sindh', approx_lat: 24.90, approx_lng: 67.13 },
-  { district: 'Hyderabad', province: 'Sindh', approx_lat: 25.39, approx_lng: 68.37 },
-  { district: 'Peshawar', province: 'KPK', approx_lat: 34.01, approx_lng: 71.58 },
-  { district: 'Quetta', province: 'Balochistan', approx_lat: 30.18, approx_lng: 66.99 },
-  { district: 'Islamabad', province: 'Islamabad', approx_lat: 33.68, approx_lng: 73.05 },
-  { district: 'Gilgit', province: 'Gilgit-Baltistan', approx_lat: 35.92, approx_lng: 74.31 },
+// Sample aggregates in the real response shape (four classes; numbers, not strings).
+const SAMPLE_CLUSTERS = [
+  ['Lahore', 'Punjab', 31.55, 74.34, 'anemia', 34, 0], ['Lahore', 'Punjab', 31.55, 74.34, 'leukemia', 6, 5],
+  ['Faisalabad', 'Punjab', 31.42, 73.08, 'anemia', 21, 0], ['Karachi', 'Sindh', 24.86, 67.01, 'thalassemia', 18, 0],
+  ['Karachi', 'Sindh', 24.86, 67.01, 'anemia', 29, 0], ['Hyderabad', 'Sindh', 25.39, 68.37, 'thalassemia', 12, 0],
+  ['Peshawar', 'KPK', 34.01, 71.58, 'leukemia', 4, 3], ['Quetta', 'Balochistan', 30.18, 66.99, 'anemia', 9, 0],
+  ['Islamabad', 'Islamabad', 33.68, 73.05, 'thalassemia', 7, 0], ['Gilgit', 'Gilgit-Baltistan', 35.92, 74.31, 'anemia', 5, 0],
+  ['Lahore', 'Punjab', 31.55, 74.34, 'healthy', 60, 0],
 ];
-const SURVEILLANCE_CONDITIONS = ['leukemia', 'leukemia_with_thrombocytopenia', 'thrombocytopenia',
-  'iron_deficiency_anemia', 'other_microcytic_anemia', 'macrocytic_anemia', 'beta_thal_trait'];
 
 function makeClusters() {
-  return DISTRICTS.map((d, i) => {
-    const cases = 4 + ((i * 7) % 40);
-    const highRisk = i % 3 === 0 ? Math.max(1, Math.round(cases * 0.15)) : 0;
-    return {
-      ...d,
-      condition: SURVEILLANCE_CONDITIONS[i % SURVEILLANCE_CONDITIONS.length],
-      case_count: String(cases),
-      high_risk_count: String(highRisk),
-      avg_confidence: (0.55 + ((i * 13) % 40) / 100).toFixed(2),
-    };
-  });
+  return SAMPLE_CLUSTERS.map(([district, province, lat, lng, condition, cases, highRisk], i) => ({
+    district, province, condition, day: new Date().toISOString(), case_count: cases, high_risk_count: highRisk,
+    avg_confidence: +(0.55 + ((i * 13) % 40) / 100).toFixed(3), approx_lat: lat, approx_lng: lng,
+  }));
 }
 
 let alertSeq = 1;
 const ALERTS = [
-  { severity: 'critical', type: 'outbreak_cluster', title: 'Leukemia cluster above baseline — Lahore',
-    description: '6 high-risk leukemia predictions in Lahore within 14 days (baseline: 1.2).', district: 'Lahore' },
-  { severity: 'high', type: 'high_risk_case', title: 'High-risk case flagged — Peshawar',
-    description: 'Single high-confidence leukemia_with_thrombocytopenia prediction forwarded for review.', district: 'Peshawar' },
-  { severity: 'medium', type: 'trend_shift', title: 'Rising iron-deficiency anemia — Hyderabad',
-    description: 'District rate up 22% over the trailing month.', district: 'Hyderabad' },
-  { severity: 'low', type: 'data_quality', title: 'Low CBC completeness — Quetta',
-    description: 'Reports missing >3 fields in 18% of recent submissions.', district: 'Quetta' },
-].map((a) => ({ id: alertSeq++, status: 'open', created_at: new Date(Date.now() - Math.random() * 5 * 86400000).toISOString(), ...a }));
+  { severity: 'high', type: 'outbreak_cluster', condition: 'leukemia', title: 'Possible leukemia cluster in Lahore',
+    description: '6 screening results with leukemia as the top score in Lahore within 7 days (threshold 3).', district: 'Lahore' },
+  { severity: 'critical', type: 'high_risk_case', condition: 'leukemia', title: 'High leukemia screening score (97%)',
+    description: 'Model leukemia confidence 97% reached the screening threshold 0.3. Screening flag only; doctor confirmation required.', district: 'Peshawar' },
+  { severity: 'medium', type: 'outbreak_cluster', condition: 'thalassemia', title: 'Possible thalassemia cluster in Hyderabad',
+    description: '4 screening results with thalassemia as the top score in Hyderabad within 7 days (threshold 3).', district: 'Hyderabad' },
+].map((a, i) => ({ id: alertSeq++, status: 'open', created_at: new Date(Date.now() - (i + 1) * 86400000).toISOString(), ...a }));
 
 let auditSeq = 1;
 const AUDIT_LOG = Array.from({ length: 12 }).map((_, i) => ({
   id: auditSeq++,
   ts: new Date(Date.now() - i * 3 * 3600000).toISOString(),
   actor_role: ['doctor', 'nih_official', 'lab_tech'][i % 3],
-  action: ['predict', 'confirm_diagnosis', 'view_clusters', 'ack_alert', 'ocr_scan'][i % 5],
+  action: ['CREATE_AND_PREDICT', 'CONFIRM_DIAGNOSIS', 'NIH_VIEW_CLUSTERS', 'NIH_ACK_ALERT', 'OCR_INGEST'][i % 5],
   resource_type: 'prediction',
   resource_id: 1000 + i,
 }));
@@ -318,72 +322,11 @@ function ensureMyNgo(fullName) {
 }
 let myRequests = [];
 
-// ---- dummy Model Health data -------------------------------------------------
-const NODES_META = [
-  { name: 'Aga Khan Lab - Karachi', district: 'Karachi', province: 'Sindh', fl_client_id: 'lab-khi-01', freshnessDays: 1 },
-  { name: 'Shaukat Khanum - Lahore', district: 'Lahore', province: 'Punjab', fl_client_id: 'lab-lhr-01', freshnessDays: 0 },
-  { name: 'PIMS Lab - Islamabad', district: 'Islamabad', province: 'Islamabad', fl_client_id: 'lab-isb-01', freshnessDays: 12 },
-  { name: 'LRH Lab - Peshawar', district: 'Peshawar', province: 'KPK', fl_client_id: 'lab-pew-01', freshnessDays: 45 },
-];
-
-function makeAccuracyHistory() {
-  const points = [];
-  let loss = 1.35, acc = 0.52;
-  for (let r = 1; r <= 12; r++) {
-    loss = Math.max(0.18, loss - (0.09 + Math.random() * 0.03));
-    acc = Math.min(0.94, acc + (0.03 + Math.random() * 0.015));
-    points.push({
-      round_number: r, loss: +loss.toFixed(3), accuracy: +acc.toFixed(3),
-      clients: NODES_META.length, created_at: ago(60 - r * 4),
-    });
-  }
-  return { source: 'fl_rounds', points };
-}
-
-function makeNodes() {
-  const now = Date.now();
-  return NODES_META.map((n, i) => {
-    const lastMs = now - n.freshnessDays * 86400000;
-    const status = n.freshnessDays <= 7 ? 'up' : n.freshnessDays <= 30 ? 'stale' : 'down';
-    return {
-      id: `lab-${i + 1}`, name: n.name, district: n.district, province: n.province, fl_client_id: n.fl_client_id,
-      last_report_at: new Date(lastMs).toISOString(),
-      reports_7d: status === 'up' ? 20 + i * 6 : status === 'stale' ? 2 : 0,
-      reports_30d: status === 'down' ? 3 : 40 + i * 10,
-      reports_total: 300 + i * 120,
-      status,
-    };
-  });
-}
-
-function makeDataIntake(days) {
-  const byDay = Array.from({ length: Math.min(days, 21) }).map((_, i) => ({
-    day: ago(Math.min(days, 21) - 1 - i).slice(0, 10),
-    count: 8 + Math.round(Math.random() * 20) + (i % 7 === 0 ? 15 : 0),
-  }));
-  const bySource = [
-    { source: 'lims', count: 640 }, { source: 'manual', count: 210 }, { source: 'ocr', count: 95 },
-  ];
-  const byCondition = [
-    { condition: 'healthy', count: 410 }, { condition: 'iron_deficiency_anemia', count: 180 },
-    { condition: 'thrombocytopenia', count: 95 }, { condition: 'macrocytic_anemia', count: 70 },
-    { condition: 'leukemia', count: 34 }, { condition: 'beta_thal_trait', count: 58 },
-    { condition: 'leukemia_with_thrombocytopenia', count: 12 },
-  ];
-  return { byDay, bySource, byCondition };
-}
-
-function makeNodeContribution(days) {
-  const span = Math.min(days, 14);
-  const rows = [];
-  NODES_META.forEach((n, i) => {
-    for (let d = 0; d < span; d++) {
-      const base = n.freshnessDays > 30 ? 0 : n.freshnessDays > 7 ? (d < 2 ? 3 : 0) : 6 + i * 2;
-      rows.push({ lab_id: `lab-${i + 1}`, name: n.name, day: ago(span - 1 - d).slice(0, 10), count: Math.max(0, base + Math.round(Math.random() * 4) - 1) });
-    }
-  });
-  return rows;
-}
+// ---- Model Health data -------------------------------------------------------
+// modelHealthSnapshot.json is exported from the real database by
+// scripts/export-model-health-snapshot.js: registered model, measured metrics,
+// imported runs, limitations and encryption status are REAL records. The mock has
+// no live deployment, so intake/prediction counts are the labelled sample series.
 
 // ---- request router ---------------------------------------------------------
 async function route(method, path, body) {
@@ -448,71 +391,70 @@ async function route(method, path, body) {
     return { ...session, permissions: permsForRole(session.role) };
   }
 
-  // --- doctor: predict / confirm / history ---
+  // --- doctor: predict / confirm / history / OCR ---
   if (pathname === '/predict' && method === 'POST') {
-    await delay(700);
-    const scores = randomScores();
-    const top = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
-    const riskFlag = top[0] !== 'healthy' && top[1] > 0.4;
-    const hgb = body.cbc?.HGB, mcv = body.cbc?.MCV;
-    const mentzer = hgb && mcv && body.cbc?.RBC ? +(mcv / body.cbc.RBC).toFixed(1) : null;
-    const fired = mentzer != null && mentzer < 13;
+    await delay(500);
+    const v = validateCbc(body.cbc || {}, body.units || (body.canonicalUnits ? CANONICAL_UNITS : {}));
+    const firstError = Object.values(v.errors)[0];
+    if (firstError) throw mockError(400, firstError);
+    if (!Object.keys(v.values).length) throw mockError(400, 'At least one recognized CBC value is required');
+    const scores = hashScores(v.canonical);
+    const top = CLASSES.reduce((a, b) => (scores[a] >= scores[b] ? a : b));
+    const riskFlag = scores.leukemia >= 0.3;
     const id = predictionSeq++;
-    const result = {
+    const imputed = FEATURES.filter((f) => !(f in v.canonical));
+    const report = { id: `mock-report-${id}`, patient_ref: body.patientRef, cbc: v.canonical, cbc_units: v.units,
+                     cbc_reported: v.values, source: body.source || 'manual', created_at: new Date().toISOString() };
+    const prediction = { id, scores, top_condition: top, top_confidence: scores[top], risk_flag: riskFlag,
+                         imputed_features: imputed, confirmed_condition: null };
+    reportsByPatient.set(body.patientRef, [...(reportsByPatient.get(body.patientRef) || []),
+      { ...report, prediction: { ...prediction, model_name: 'cbc_multiclass', model_version: 'mock' } }]);
+    return {
+      persisted: true, report, prediction,
       inference: {
-        scores, risk_flag: riskFlag, top_condition: top[0],
-        model_name: 'FedHealth CBC-Net (demo)', model_version: 'v1.0.0-preview', mode: 'federated',
-        inference_ms: 60 + Math.round(Math.random() * 120),
-        rule_flags: mentzer != null ? {
-          thalassemia_trait: {
-            applicable: true, flag: fired, mentzer_index: mentzer,
-            rationale: fired
-              ? 'Mentzer index < 13 with microcytosis and near-normal RBC count is suggestive of beta-thalassemia trait rather than iron-deficiency anemia.'
-              : 'Discriminant indices do not meet the beta-thalassemia trait screening threshold.',
-            indices: {
-              mentzer: { value: mentzer, thal_suggestive: fired },
-              srivastava: { value: +(mcv && body.cbc?.MCH ? (body.cbc.MCH / (body.cbc?.RBC || 1)).toFixed(1) : 0), thal_suggestive: fired },
-            },
-          },
-        } : undefined,
+        model_name: 'cbc_multiclass', model_version: 'mock (no model call)', mode: 'demo_mock', classes: CLASSES,
+        features: FEATURES, scores, top_condition: top, top_confidence: scores[top], risk_flag: riskFlag,
+        risk_threshold: 0.3, canonical_cbc: v.canonical, imputed_features: imputed, rule_flags: {},
+        calibration: { method: 'temperature_scaling' }, inference_ms: 3,
       },
-      prediction: { id, confirmed_condition: null },
+      model: { name: 'cbc_multiclass', version: 'mock', active: false },
+      screening: {
+        disclaimer: `${MOCK_NOTE} Screening support only, not a diagnosis; the model uses only the 10 CBC values.`,
+        modelInputs: FEATURES, imputedFeatures: imputed, notModelInputs: contract.not_model_inputs,
+      },
+      rule_flags: {},
+      alerts: riskFlag ? [{ id: 900 + id, type: 'high_risk_case', condition: 'leukemia', title: 'High leukemia screening score (mock)' }] : [],
     };
-    predictionsById.set(id, { ...body, scores });
-    return result;
   }
-  if (/^\/predictions\/\d+\/confirm$/.test(pathname) && method === 'POST') {
+  if (/^\/predictions\/[^/]+\/confirm$/.test(pathname) && method === 'POST') {
     await delay(300);
-    return { ok: true };
+    if (!CLASSES.includes(body.confirmedCondition)) throw mockError(400, 'Validation failed');
+    return { id: pathname.split('/')[2], confirmed_condition: body.confirmedCondition };
   }
   if (/^\/patients\/[^/]+\/history$/.test(pathname) && method === 'GET') {
     await delay(400);
     const ref = decodeURIComponent(pathname.split('/')[2]);
     return makePatientHistory(ref);
   }
-  if (pathname === '/ocr' && method === 'UPLOAD') {
-    await delay(1100);
-    const picks = ['WBC', 'RBC', 'HGB', 'HCT', 'MCV', 'PLT'];
-    const cbc = {};
-    picks.forEach((k) => {
-      if (Math.random() > 0.25) {
-        cbc[k] = k === 'HGB' ? (11 + Math.random() * 4).toFixed(1)
-          : k === 'PLT' ? String(Math.round(150 + Math.random() * 200))
-          : k === 'MCV' ? (75 + Math.random() * 25).toFixed(1)
-          : (4 + Math.random() * 6).toFixed(1);
-      }
-    });
-    return { cbc, extractedCount: Object.keys(cbc).length };
+  if (pathname === '/ocr' && (method === 'UPLOAD' || method === 'POST')) {
+    await delay(900);
+    // Mock OCR: always "reads" the example report (the real API parses the upload/text).
+    const cbc = { WBC: 9010, RBC: 4.47, HGB: 12.4, HCT: 38, MCV: 85, MCH: 28, MCHC: 33, RDW: 13, PLT: 147000, NEUTp: 69 };
+    const units = { WBC: '/mm3', RBC: 'mil/mm3', HGB: 'g/dL', HCT: '%', MCV: 'fl', MCH: 'pg', MCHC: 'g/dL', RDW: '%', PLT: '/mm3', NEUTp: '%' };
+    const v = validateCbc(cbc, units);
+    return { cbc, units, unitStatus: Object.fromEntries(FEATURES.map((f) => [f, 'accepted'])), canonical: v.canonical,
+             outOfRange: [], missing: [], extractedCount: 10, engine: 'mock', text: '(mock OCR)' };
   }
   if (pathname === '/symptoms/parse' && method === 'POST') {
     await delay(500);
     const text = (body.text || '').toLowerCase();
     const dict = {
-      fatigue: /fatigue|thak|تھکن/, pale_skin: /pale|پیلا/, shortness_of_breath: /breath|سانس/,
-      fever: /fever|bukhar|بخار/, bone_pain: /bone pain|haddi/, bruising: /bruis|neel/,
+      fatigue: /fatigue|thak|تھکن/, pallor: /pale|پیلا/,
+      breathlessness: /breath|سانس/, fever: /fever|bukhar|بخار/,
+      bone_pain: /bone pain|haddi/, bruising: /bruis|neel/,
     };
     const tags = Object.entries(dict).filter(([, re]) => re.test(text)).map(([k]) => k);
-    return { language: /[؀-ۿ]/.test(text) ? 'ur' : 'en', tags, symptoms: tags };
+    return { language: /[؀-ۿ]/.test(text) ? 'ur' : 'en', tags, symptoms: tags.map((tag) => ({ tag })), usedByModel: false };
   }
 
   // --- surveillance (endpoint paths kept as /nih/... to match Module 2/6) ---
@@ -521,6 +463,7 @@ async function route(method, path, body) {
     let rows = makeClusters();
     const province = params.get('province');
     const condition = params.get('condition');
+    if (condition && !CLASSES.includes(condition)) throw mockError(400, 'Validation failed');
     if (province) rows = rows.filter((r) => r.province === province);
     if (condition) rows = rows.filter((r) => r.condition === condition);
     return rows;
@@ -539,7 +482,7 @@ async function route(method, path, body) {
   }
   if (pathname === '/audit/verify' && method === 'GET') {
     await delay(600);
-    return { ok: true };
+    return { ok: true, broken_at: null };
   }
   if (pathname === '/audit' && method === 'GET') {
     await delay(400);
@@ -620,37 +563,30 @@ async function route(method, path, body) {
     return { ...ngo, requests };
   }
 
-  // --- Model Health dashboard ---
-  if (pathname === '/model-health/summary' && method === 'GET') {
-    await delay(400);
-    return {
-      activeModel: {
-        name: 'FedHealth CBC-Net', version: 'v1.0.0-preview',
-        metrics: { macro_f1: 0.87, accuracy: 0.91 }, created_at: ago(4),
-      },
-      totalPredictions: 4820, avgInferenceMs: 118, totalLabReports: 5310,
-      lastTrainingRun: { started_at: ago(5), completed_at: ago(4), total_rounds: 12, labs: NODES_META.length, encryption: 'paillier', key_bits: 2048 },
-    };
-  }
-  if (pathname === '/model-health/accuracy-history' && method === 'GET') {
-    await delay(500);
-    return makeAccuracyHistory();
-  }
-  if (pathname === '/model-health/nodes' && method === 'GET') {
-    await delay(400);
-    return makeNodes();
-  }
-  if (pathname === '/model-health/data-intake' && method === 'GET') {
-    await delay(450);
-    return makeDataIntake(Number(params.get('days')) || 30);
-  }
-  if (pathname === '/model-health/node-contribution' && method === 'GET') {
-    await delay(450);
-    return makeNodeContribution(Number(params.get('days')) || 30);
-  }
-  if (pathname === '/model-health/encryption' && method === 'GET') {
+  // --- Model Health dashboard (real snapshot + labelled sample intake) ---
+  if (pathname.startsWith('/model-health/') && method === 'GET') {
     await delay(300);
-    return { scheme: 'paillier', keyBits: 2048, roundsEncrypted: 12, lastRunCompletedAt: ago(4) };
+    const S = modelHealthSnapshot;
+    switch (pathname) {
+      case '/model-health/summary':
+        return { activeModel: S.activeModel, trainingRuns: S.trainingRuns, lastTrainingRun: S.lastTrainingRun,
+                 totalPredictions: null, avgInferenceMs: null, totalLabReports: null };
+      case '/model-health/runs': return S.runs;
+      case '/model-health/accuracy-history': {
+        const runId = params.get('run') || S.defaultRunId;
+        const run = S.runs.find((r) => r.id === runId) || S.runs[0];
+        return { source: 'fl_rounds', metric_split: 'validation', run, points: S.histories[run.id] || [], runs: S.runs };
+      }
+      case '/model-health/nodes': return S.nodes;
+      case '/model-health/node-contribution': return S.nodeContribution;
+      case '/model-health/training-data': return S.trainingData;
+      case '/model-health/encryption': return S.encryption;
+      case '/model-health/limitations': return S.limitations;
+      // No live deployment in mock mode: empty intake makes the page show its labelled sample series.
+      case '/model-health/data-intake':
+        return { days: Number(params.get('days')) || 30, byDay: [], bySource: [], byCondition: [], bySite: [] };
+      default: break;
+    }
   }
 
   const e = new Error(`(preview mock) No dummy handler for ${method} ${pathname}`);
@@ -663,5 +599,5 @@ export const api = {
   post: (path, body) => route('POST', path, body || {}),
   put: (path, body) => route('PUT', path, body || {}),
   patch: (path, body) => route('PATCH', path, body || {}),
-  upload: (path) => route('UPLOAD', path),
+  upload: (path, formData) => route('UPLOAD', path, formData),
 };

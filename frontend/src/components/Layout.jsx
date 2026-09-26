@@ -115,6 +115,13 @@ export default function Layout({ children }) {
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-4" />
           <span className="text-sm text-muted-foreground">FedHealth federated clinical intelligence</span>
+          {import.meta.env.VITE_USE_MOCK === 'true' && (
+            <span className="ml-auto rounded-md border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs text-warning"
+                  data-testid="mock-banner"
+                  title="VITE_USE_MOCK=true: no backend. Model Health shows a snapshot of the real registry and runs; prediction scores are not from the model.">
+              Demo mode — mock API
+            </span>
+          )}
         </header>
         <div className="flex-1 overflow-auto">
           <div className="mx-auto w-full max-w-[1180px] p-6">{children}</div>

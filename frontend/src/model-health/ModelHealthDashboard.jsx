@@ -1,26 +1,33 @@
 // frontend/src/model-health/ModelHealthDashboard.jsx
-// AI Model Health dashboard (NIH/admin tier, same 'nih:dashboard' permission
-// as Surveillance): model accuracy/loss over training rounds, incoming data
-// volume + nature, per-node status and contribution, and the encryption
-// configuration used by the last FL run. Everything here is aggregate.
+// AI Model Health (NIH/admin tier, 'nih:dashboard'). Shows the REGISTERED model
+// and its measured test results, the known limitations, the imported federated
+// runs (validation per round), encryption per run, the FL lab partitions and
+// what they held, the training data, and this deployment's live intake.
+// Everything is aggregate. Charts without a real source are labelled
+// "Sample data" (see sampleData.js); nothing illustrative is shown unlabelled.
 import { useEffect, useState } from 'react';
-import { Activity, Cpu, Gauge, Database } from 'lucide-react';
+import { Activity, Gauge, HeartPulse, ShieldAlert, Cpu } from 'lucide-react';
 import { api } from '../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
+import { pct1 } from '../lib/format';
+import ModelCard from './ModelCard';
+import LimitationsPanel from './LimitationsPanel';
 import AccuracyChart from './AccuracyChart';
-import NodeStatusTable from './NodeStatusTable';
-import DataIntakeCharts from './DataIntakeCharts';
-import NodeContributionChart from './NodeContributionChart';
 import EncryptionStatusCard from './EncryptionStatusCard';
+import FederatedRunsTable from './FederatedRunsTable';
+import NodeStatusTable, { SampleNodeStatus } from './NodeStatusTable';
+import NodeContributionChart from './NodeContributionChart';
+import TrainingDataCharts from './TrainingDataCharts';
+import DataIntakeCharts from './DataIntakeCharts';
 
 const SPANS = [
   ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'],
 ];
 
-function StatCard({ icon: Icon, label, value, sub }) {
+function StatCard({ icon: Icon, label, value, sub, testId }) {
   return (
     <Card>
       <CardContent className="flex items-start gap-3">
@@ -29,7 +36,7 @@ function StatCard({ icon: Icon, label, value, sub }) {
         </div>
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">{label}</div>
-          <div className="truncate font-mono text-lg tabular-nums text-foreground">{value}</div>
+          <div className="truncate font-mono text-lg tabular-nums text-foreground" data-testid={testId}>{value}</div>
           {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
         </div>
       </CardContent>
@@ -39,65 +46,126 @@ function StatCard({ icon: Icon, label, value, sub }) {
 
 export default function ModelHealthDashboard() {
   const [summary, setSummary] = useState(null);
+  const [runs, setRuns] = useState(null);
+  const [runId, setRunId] = useState(null);
   const [history, setHistory] = useState(null);
   const [nodes, setNodes] = useState(null);
-  const [intake, setIntake] = useState(null);
   const [contribution, setContribution] = useState(null);
+  const [trainingData, setTrainingData] = useState(null);
   const [encryption, setEncryption] = useState(null);
+  const [limitations, setLimitations] = useState(null);
+  const [intake, setIntake] = useState(null);
   const [days, setDays] = useState('30');
+  const [err, setErr] = useState('');
 
   useEffect(() => {
-    api.get('/model-health/summary').then(setSummary).catch(() => setSummary({}));
-    api.get('/model-health/accuracy-history').then(setHistory).catch(() => setHistory({ points: [] }));
+    const fail = (e) => setErr(e.message);
+    api.get('/model-health/summary').then(setSummary).catch((e) => { fail(e); setSummary({}); });
+    api.get('/model-health/runs').then(setRuns).catch(() => setRuns([]));
     api.get('/model-health/nodes').then(setNodes).catch(() => setNodes([]));
-    api.get('/model-health/encryption').then(setEncryption).catch(() => setEncryption(null));
+    api.get('/model-health/node-contribution').then(setContribution).catch(() => setContribution([]));
+    api.get('/model-health/training-data').then(setTrainingData).catch(() => setTrainingData(null));
+    api.get('/model-health/encryption').then(setEncryption).catch(() => setEncryption({}));
+    api.get('/model-health/limitations').then(setLimitations).catch(() => setLimitations({}));
   }, []);
 
   useEffect(() => {
-    setIntake(null); setContribution(null);
-    api.get(`/model-health/data-intake?days=${days}`).then(setIntake).catch(() => setIntake(null));
-    api.get(`/model-health/node-contribution?days=${days}`).then(setContribution).catch(() => setContribution([]));
+    setHistory(null);
+    api.get(`/model-health/accuracy-history${runId ? `?run=${runId}` : ''}`)
+      .then(setHistory).catch(() => setHistory({ points: [] }));
+  }, [runId]);
+
+  useEffect(() => {
+    setIntake(null);
+    api.get(`/model-health/data-intake?days=${days}`).then(setIntake).catch(() => setIntake({ days: Number(days) }));
   }, [days]);
 
-  const model = summary?.activeModel;
-  const accuracyPct = model?.metrics?.accuracy != null ? `${Math.round(model.metrics.accuracy * 100)}%` : '—';
-  const f1Pct = model?.metrics?.macro_f1 != null ? `${Math.round(model.metrics.macro_f1 * 100)}%` : null;
+  const model = summary ? summary.activeModel ?? null : undefined;
+  const m = model?.metrics || {};
+  const measured = m.split === 'test';
+  const sick = m.test_rows && m.per_class?.healthy ? m.test_rows - m.per_class.healthy.support : null;
+  const runsInfo = summary?.trainingRuns;
 
   return (
     <div>
       <div className="mb-4.5">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">Federated learning telemetry</div>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">Registered model · federated learning records</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">AI Model Health</h1>
+        {err && <p className="mt-1 text-sm text-destructive">{err}</p>}
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
-        <StatCard icon={Gauge} label="Active model accuracy" value={accuracyPct}
-                  sub={model ? `${model.name} · ${model.version}` : undefined} />
-        <StatCard icon={Activity} label="Macro F1" value={f1Pct || '—'} />
-        <StatCard icon={Cpu} label="Predictions served" value={summary?.totalPredictions ?? '—'}
-                  sub={summary?.avgInferenceMs != null ? `avg ${summary.avgInferenceMs} ms` : undefined} />
-        <StatCard icon={Database} label="Lab reports ingested" value={summary?.totalLabReports ?? '—'} />
+      <div className="mb-5 grid grid-cols-2 gap-3.5 lg:grid-cols-5">
+        <StatCard icon={Gauge} label="Test accuracy (hybrid)" testId="stat-accuracy"
+                  value={measured ? pct1(m.accuracy) : '—'} sub={measured ? `frozen ${m.test_rows}-row test split` : 'no measured metrics'} />
+        <StatCard icon={Activity} label="Macro-F1 (test)" value={measured ? pct1(m.macro_f1) : '—'}
+                  sub={measured && m.ece_15_bins != null ? `ECE ${m.ece_15_bins.toFixed(3)}` : undefined} />
+        <StatCard icon={HeartPulse} label="Leukemia recall (test)" value={measured ? pct1(m.per_class_recall?.leukemia) : '—'} />
+        <StatCard icon={ShieldAlert} label="Sick called healthy (test)" value={measured ? m.sick_called_healthy : '—'}
+                  sub={sick ? `of ${sick} sick test cases` : undefined} />
+        <StatCard icon={Cpu} label="Predictions served (this deployment)" value={summary?.totalPredictions ?? '—'}
+                  sub={summary?.avgInferenceMs != null ? `avg ${summary.avgInferenceMs} ms · ${summary.totalLabReports} reports` : undefined} />
       </div>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid items-start gap-5 lg:grid-cols-[1.25fr_1fr]">
         <Card>
-          <CardHeader><CardTitle>Accuracy & loss over training rounds</CardTitle></CardHeader>
-          <CardContent><AccuracyChart history={history} /></CardContent>
+          <CardHeader><CardTitle>Registered model</CardTitle></CardHeader>
+          <CardContent><ModelCard model={model} /></CardContent>
+        </Card>
+        <Card className="border-warning/40">
+          <CardHeader><CardTitle>Known limitations</CardTitle></CardHeader>
+          <CardContent><LimitationsPanel data={limitations} /></CardContent>
+        </Card>
+      </div>
+
+      <div className="mt-5 grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Validation accuracy & loss per federated round</CardTitle>
+          </CardHeader>
+          <CardContent><AccuracyChart history={history} runId={runId} onRunChange={setRunId} /></CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Encryption status</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Encryption of federated updates</CardTitle></CardHeader>
           <CardContent><EncryptionStatusCard status={encryption} /></CardContent>
         </Card>
       </div>
 
       <Card className="mt-5">
-        <CardHeader><CardTitle>Federated nodes</CardTitle></CardHeader>
-        <CardContent><NodeStatusTable nodes={nodes} /></CardContent>
+        <CardHeader>
+          <CardTitle>
+            Federated runs
+            {runsInfo && <span className="ml-2 text-sm font-normal text-muted-foreground">
+              {runsInfo.total} imported · round 0 kept in {runsInfo.keptRoundZero}
+            </span>}
+          </CardTitle>
+        </CardHeader>
+        <CardContent><FederatedRunsTable runs={runs} /></CardContent>
+      </Card>
+
+      <div className="mt-5 grid items-start gap-5 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>Federated lab partitions</CardTitle></CardHeader>
+          <CardContent><NodeStatusTable nodes={nodes} /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Training rows per lab and run</CardTitle></CardHeader>
+          <CardContent><NodeContributionChart rows={contribution} /></CardContent>
+        </Card>
+      </div>
+
+      <Card className="mt-5">
+        <CardHeader><CardTitle>Live node status</CardTitle></CardHeader>
+        <CardContent><SampleNodeStatus /></CardContent>
+      </Card>
+
+      <Card className="mt-5">
+        <CardHeader><CardTitle>Training data</CardTitle></CardHeader>
+        <CardContent><TrainingDataCharts data={trainingData} /></CardContent>
       </Card>
 
       <Card className="mt-5">
         <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle>Node contribution</CardTitle>
+          <CardTitle>Data intake (this deployment)</CardTitle>
           <Select value={days} onValueChange={setDays}>
             <SelectTrigger className="w-[150px]">
               <SelectValue>{(v) => SPANS.find(([val]) => val === v)?.[1] || v}</SelectValue>
@@ -105,11 +173,6 @@ export default function ModelHealthDashboard() {
             <SelectContent>{SPANS.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
           </Select>
         </CardHeader>
-        <CardContent><NodeContributionChart rows={contribution} /></CardContent>
-      </Card>
-
-      <Card className="mt-5">
-        <CardHeader><CardTitle>Data intake</CardTitle></CardHeader>
         <CardContent><DataIntakeCharts intake={intake} /></CardContent>
       </Card>
     </div>

@@ -1,10 +1,14 @@
 // frontend/src/model-health/NodeStatusTable.jsx
-// Per-lab (FL node) status. "up/stale/down" is a RECENCY HEURISTIC derived
-// from each lab's most recent lab_report — not a live FL heartbeat, since
-// Module 4's federation is a batch simulation, not an always-on cluster.
+// Federated participants as recorded in the run settings: the simulated lab
+// partitions lab-00..lab-04 of the public training split, with the training
+// rows each held per run (real, from settings.json). There is no live FL
+// heartbeat — the federation ran as a batch simulation — so live status is
+// shown separately below as clearly labelled sample data.
 import { CircleCheck, CircleAlert, CircleX } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
+import SampleBadge from './SampleBadge';
+import { sampleNodeStatus } from './sampleData';
 
 const STATUS_META = {
   up: { label: 'Up', icon: CircleCheck, cls: 'border-success/30 bg-success/10 text-success' },
@@ -20,14 +24,13 @@ function timeAgo(iso) {
   return `${days} days ago`;
 }
 
-export default function NodeStatusTable({ nodes }) {
-  if (!nodes) return <p className="text-sm text-muted-foreground">Loading nodes…</p>;
-  const up = nodes.filter((n) => n.status === 'up').length;
-
+export function SampleNodeStatus() {
+  const nodes = sampleNodeStatus();
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{up}</span> of {nodes.length} nodes up
+    <div data-testid="sample-node-status">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <SampleBadge title="No live FL heartbeat exists; illustrative only" />
+        <span>What live node monitoring would look like once labs run always-on clients.</span>
       </div>
       <Table>
         <TableHeader>
@@ -37,7 +40,6 @@ export default function NodeStatusTable({ nodes }) {
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Last seen</TableHead>
             <TableHead className="text-right">Reports (7d)</TableHead>
-            <TableHead className="text-right">Reports (total)</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -53,10 +55,46 @@ export default function NodeStatusTable({ nodes }) {
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">{timeAgo(n.last_report_at)}</TableCell>
                 <TableCell className="text-right font-mono tabular-nums">{n.reports_7d}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{n.reports_total}</TableCell>
               </TableRow>
             );
           })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+export default function NodeStatusTable({ nodes }) {
+  if (!nodes) return <p className="text-sm text-muted-foreground">Loading nodes…</p>;
+  if (nodes.length === 0) return <p className="text-sm text-muted-foreground">No federated run has been imported yet.</p>;
+
+  return (
+    <div data-testid="fl-nodes">
+      <p className="mb-3 text-sm text-muted-foreground">
+        {nodes.length} simulated lab partitions of the public training split, as recorded in the run settings.
+      </p>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Lab id</TableHead>
+            <TableHead>Kind</TableHead>
+            <TableHead className="text-right">Runs</TableHead>
+            <TableHead>Scenarios</TableHead>
+            <TableHead className="text-right">Training rows (min–max)</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {nodes.map((n) => (
+            <TableRow key={n.lab_id}>
+              <TableCell className="font-mono font-medium text-foreground">{n.lab_id}</TableCell>
+              <TableCell><Badge variant="outline">simulated partition</Badge></TableCell>
+              <TableCell className="text-right font-mono tabular-nums">{n.runs}</TableCell>
+              <TableCell className="text-muted-foreground">{n.scenarios.join(', ')}</TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {n.min_train_rows === n.max_train_rows ? n.min_train_rows : `${n.min_train_rows}–${n.max_train_rows}`}
+              </TableCell>
+            </TableRow>
+          ))}
         </TableBody>
       </Table>
     </div>
