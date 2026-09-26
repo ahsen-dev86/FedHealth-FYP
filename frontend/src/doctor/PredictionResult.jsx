@@ -104,6 +104,17 @@ export default function PredictionResult({ result, onConfirm }) {
         <p>Not used by the model: {notInputs.join(', ')}.</p>
       </div>
 
+      {screening.dataQualityWarnings?.length > 0 && (
+        <Alert className="mt-3 border-warning/40" data-testid="result-warnings">
+          <TriangleAlert className="text-warning" />
+          <AlertTitle>Data-quality warnings</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc pl-4">{screening.dataQualityWarnings.map((w) => <li key={w}>{w}</li>)}</ul>
+            The scores above were computed from the values as entered; verify them against the report.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <RuleFlag flags={result?.rule_flags || inf?.rule_flags} />
 
       {alerts.length > 0 && (

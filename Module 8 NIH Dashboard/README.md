@@ -1,5 +1,7 @@
 # FedHealth — Frontend (Doctor Portal + Surveillance Dashboard)
 
+> **Superseded (feat/integration, 2026-09-26).** The maintained surveillance and Model Health views (src/surveillance, src/model-health) lives in `frontend/`. The files in this folder are the older standalone copy (nine-class labels, 6-14 CBC fields) and are not built, tested or updated; do not edit them. See docs/INTEGRATION.md.
+
 A React (Vite) single-page app. One build, **role-routed**: doctors land in the
 Doctor Portal, health officials in the Surveillance Dashboard — mirroring
 backend RBAC. (The backend role slug/permission/API paths stay `nih_official`

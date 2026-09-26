@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { useAuth, NOTICE_KEY } from './AuthContext';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -31,6 +31,13 @@ export default function LoginPage() {
     email: '', password: '', fullName: '', role: 'doctor', organization: '',
   });
   const [error, setError] = useState('');
+  const [notice] = useState(() => {
+    try {
+      const n = sessionStorage.getItem(NOTICE_KEY);
+      sessionStorage.removeItem(NOTICE_KEY);
+      return n || '';
+    } catch { return ''; }
+  });
   const [busy, setBusy] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -71,6 +78,11 @@ export default function LoginPage() {
             <p className="mt-1.5 text-sm text-muted-foreground">Clinical decision support · CBC intelligence</p>
           </div>
 
+          {notice && !error && (
+            <Alert className="mb-4" data-testid="login-notice">
+              <AlertDescription>{notice}</AlertDescription>
+            </Alert>
+          )}
           {error && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle />

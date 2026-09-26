@@ -229,18 +229,121 @@ def test_inference_api_contract_on_real_bundle(api):
     assert n["canonical_cbc"]["WBC"] == pytest.approx(9.01) and n["missing_features"] == []
 
 
-# --- frontend rows: known mismatch 1, fixed in Phase B -----------------------------------------
-PHASE_B = pytest.mark.xfail(strict=True, reason="Phase B: frontend still on the nine-class/6-field mock; "
-                                               "remove this mark when the frontend is aligned")
+@pytest.mark.integration
+def test_inference_api_rejects_wrong_types_and_answers_json(api):
+    """Same typing rules as the Node API; errors are JSON, never HTML or a 500."""
+    bad_values = [{"HGB": "12.4"}, {"HGB": True}, {"HGB": [12.4]}, {"HGB": {"v": 12.4}}]
+    for cbc in bad_values:
+        r = api.post("/infer", json={"cbc": cbc, "units": {"HGB": "g/dL"}})
+        assert r.status_code == 400 and r.is_json and "must be a finite number" in r.json["error"], cbc
+    nan = api.post("/infer", data='{"cbc": {"HGB": NaN}, "units": {"HGB": "g/dL"}}', content_type="application/json")
+    assert nan.status_code == 400 and nan.is_json
+    for units in [{"HGB": 5}, {"HGB": ""}, {"HGB": "g" * 40}]:
+        r = api.post("/infer", json={"cbc": {"HGB": 12.4}, "units": units})
+        assert r.status_code == 400 and r.is_json, units
+    assert api.post("/infer", data="{not json", content_type="application/json").status_code == 400
+    big = api.post("/infer", data="x" * (70 * 1024), content_type="application/json")
+    assert big.status_code == 413 and big.is_json
+    for method, path, code in [("get", "/nope", 404), ("get", "/infer", 405)]:
+        r = getattr(api, method)(path)
+        assert r.status_code == code and r.is_json, path
 
 
-@PHASE_B
-def test_frontend_mock_uses_only_the_four_classes():
-    text = (ROOT / "frontend/src/api/client.mock.js").read_text(encoding="utf-8")
-    assert [label for label in OLD_LABELS if label in text] == []
+# --- frontend rows ----------------------------------------------------------------------------
+FRONTEND = ROOT / "frontend"
 
 
-@PHASE_B
-def test_frontend_cbc_form_offers_exactly_the_ten_features():
-    text = (ROOT / "frontend/src/doctor/CbcForm.jsx").read_text(encoding="utf-8")
-    assert all(re.search(rf"['\"]{f}['\"]", text) for f in schema.FEATURES)
+def run_node_esm(script, payload):
+    """Run an ES-module snippet in frontend/ (imports lib/*.js as the browser build does)."""
+    result = subprocess.run(["node", "--input-type=module", "-e", script], cwd=FRONTEND, input=json.dumps(payload),
+                            capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+ESM_STDIN = "import fs from 'node:fs'; const input = JSON.parse(fs.readFileSync(0, 'utf8'));"
+
+
+def test_frontend_contract_copy_is_identical_and_current():
+    import export_contract
+    front = FRONTEND / "src/lib/cbcContract.json"
+    assert front in export_contract.TARGETS
+    assert front.read_text(encoding="utf-8").replace("\r\n", "\n") == export_contract.render()
+
+
+def test_frontend_sources_have_no_old_class_names():
+    hits = [(f.relative_to(ROOT).as_posix(), label) for f in (FRONTEND / "src").rglob("*")
+            if f.suffix in {".js", ".jsx", ".json"} for label in OLD_LABELS if label in f.read_text(encoding="utf-8")
+            and f.name != "modelHealthSnapshot.json"]  # the snapshot holds dataset *subtype* recalls from the registry
+    assert hits == []
+
+
+@node
+def test_frontend_form_fields_units_and_labels_follow_the_contract():
+    import export_contract
+    from fedhealth_ml.preprocess import _unit
+    js = ESM_STDIN + """
+      const f = await import('./src/lib/format.js');
+      const c = await import('./src/lib/contract.js');
+      process.stdout.write(JSON.stringify({
+        fields: f.CBC_FIELDS.map((x) => x.key),
+        options: Object.fromEntries(f.CBC_FIELDS.map((x) => [x.key, x.unitOptions.map((o) => o.value)])),
+        labels: Object.keys(f.CONDITION_LABELS), colors: Object.keys(c.CLASS_COLORS), hex: Object.keys(c.CLASS_HEX),
+      }));"""
+    out = run_node_esm(js, None)
+    assert out["fields"] == schema.FEATURES
+    assert out["labels"] == out["colors"] == out["hex"] == schema.CLASSES
+    accepted = export_contract.accepted_units()  # probed from normalize_units itself
+    for feature, options in out["options"].items():
+        assert _unit(options[0]) == _unit(schema.UNITS[feature]), feature  # canonical unit first
+        for unit in options:
+            assert _unit(unit) in accepted[feature], (feature, unit)
+
+
+FRONT_CASES = [  # (values as typed in the form, units)
+    [{"WBC": "9,010", "PLT": "147,000"}, {"WBC": "/mm3", "PLT": "/mm3"}],
+    [{"HGB": "124"}, {"HGB": "g/L"}],
+    [{"HCT": "0.38"}, {"HCT": "L/L"}],
+    [{"WBC": "9010"}, {"WBC": "10^3/uL"}],
+    [{"HGB": "40"}, {"HGB": "g/dL"}],
+    [{"HGB": "-3"}, {"HGB": "g/dL"}],
+    [{"HGB": "12.4"}, {"HGB": "mmol/L"}],
+    [{"HGB": "12.4"}, {}],
+    [{"HGB": "2.4", "HCT": "38", "MCHC": "33", "RBC": "4.47", "MCH": "28", "MCV": "85"},
+     {"HGB": "g/dL", "HCT": "%", "MCHC": "g/dL", "RBC": "10^6/uL", "MCH": "pg", "MCV": "fL"}],
+]
+FRONT_NOT_NUMBERS = ["abc", "12,4", "1e3", "12.4.5", "--1"]
+
+
+@node
+def test_frontend_validation_matches_backend_and_python():
+    front = run_node_esm(ESM_STDIN + """
+      const c = await import('./src/lib/contract.js');
+      process.stdout.write(JSON.stringify(input.map(([v, u]) => c.validateCbc(v, u))));""", FRONT_CASES)
+    numeric = [[{k: float(x.replace(",", "")) for k, x in v.items()}, u] for v, u in FRONT_CASES]
+    back = run_node("""const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+      const { prepareCbc } = require('./src/services/cbc');
+      process.stdout.write(JSON.stringify(input.map(([cbc, units]) => {
+        try { return prepareCbc({ cbc, units }); } catch (e) { return { error: e.message }; } })));""", numeric)
+    for (numbers, units), f, bk in zip(numeric, front, back):
+        try:
+            py = {k: v for k, v in normalize_units(numbers, units=units).items() if v == v}
+        except ValueError:
+            assert f["errors"] and "error" in bk, (numbers, units)
+            assert list(f["errors"].values())[0] == bk["error"]  # same wording as the API
+            continue
+        assert not f["errors"] and "error" not in bk, (numbers, units, f["errors"], bk)
+        assert f["canonical"] == pytest.approx(py) and bk["canonical"] == pytest.approx(py)
+        assert f["warnings"] == bk["warnings"]
+    assert len(front[-1]["warnings"]) == 2  # HGB typo breaks MCHC and MCH
+    typed = run_node_esm(ESM_STDIN + """
+      const c = await import('./src/lib/contract.js');
+      process.stdout.write(JSON.stringify(input.map((v) => c.validateCbc({ HGB: v }, { HGB: 'g/dL' }).errors.HGB)));""",
+                         FRONT_NOT_NUMBERS)
+    assert typed == ["HGB must be a number"] * len(FRONT_NOT_NUMBERS)  # "12,4" is ambiguous, never read as 124
+
+
+def test_standalone_frontend_copies_are_marked_superseded():
+    for folder in ["Module 7 Doctor Portal", "Module 8 NIH Dashboard"]:
+        text = (ROOT / folder / "README.md").read_text(encoding="utf-8")
+        assert "Superseded" in text and "frontend/" in text, folder

@@ -10,6 +10,9 @@ import { api } from '../api/client';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 
+const OCR_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/tiff'];
+const MAX_BYTES = 8 * 1024 * 1024;
+
 function summary(r) {
   const n = r.extractedCount || 0;
   if (!n) return 'No CBC values could be read. Try a clearer, flatter photo, or enter values manually.';
@@ -48,6 +51,15 @@ export default function OcrUpload({ onExtract }) {
   function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Same limits as the API, checked first so the doctor gets an immediate answer.
+    const problem = !OCR_TYPES.includes(file.type) ? 'Choose a PNG, JPEG, WebP or TIFF photo/scan of the report (for a PDF, paste its text).'
+      : file.size === 0 ? 'That file is empty.'
+      : file.size > MAX_BYTES ? 'The image is larger than 8 MB; take a smaller photo or crop it.' : '';
+    if (problem) {
+      setErr(problem); setMsg('');
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
     const fd = new FormData();
     fd.append('image', file);
     run(() => api.upload('/ocr', fd));
@@ -68,7 +80,7 @@ export default function OcrUpload({ onExtract }) {
       </div>
       {pasting && (
         <div className="w-full space-y-1.5">
-          <Textarea rows={5} placeholder={'e.g.\nTotal Leucocyte Count  9,010  /mm3\nHaemoglobin  12.4  g/dL'}
+          <Textarea rows={5} maxLength={20000} placeholder={'e.g.\nTotal Leucocyte Count  9,010  /mm3\nHaemoglobin  12.4  g/dL'}
                     aria-label="Report text" value={text} onChange={(e) => setText(e.target.value)} />
           <Button type="button" size="sm" disabled={busy || !text.trim()}
                   onClick={() => run(() => api.post('/ocr', { text }))}>

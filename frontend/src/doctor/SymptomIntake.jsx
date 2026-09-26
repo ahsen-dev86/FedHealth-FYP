@@ -74,7 +74,7 @@ export default function SymptomIntake({ value, onChange, tags, onParsed }) {
           </Button>
         )}
       </div>
-      <Textarea rows={3} value={value}
+      <Textarea rows={3} value={value} maxLength={2000}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="e.g. fatigue, pale skin, shortness of breath — یا اردو میں: تھکن، پیلاہٹ" />
       <div className="mt-2 flex items-center gap-2">

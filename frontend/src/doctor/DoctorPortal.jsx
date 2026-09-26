@@ -10,7 +10,9 @@ import OcrUpload from './OcrUpload';
 import SymptomIntake from './SymptomIntake';
 import PredictionResult from './PredictionResult';
 import PatientHistory from './PatientHistory';
-import { FEATURES, UNIT_OPTIONS, validateCbc, unitFactor } from '../lib/contract';
+import {
+  FEATURES, UNIT_OPTIONS, validateCbc, unitFactor, patientRefError, ageError,
+} from '../lib/contract';
 import { DISTRICTS, findDistrict } from '../lib/districts';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -18,7 +20,7 @@ import { Label } from '../components/ui/label';
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, TriangleAlert } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
@@ -47,6 +49,8 @@ export default function DoctorPortal() {
   const [historyKey, setHistoryKey] = useState(0); // bump to refetch after predict
 
   const validation = useMemo(() => validateCbc(cbc, units), [cbc, units]);
+  const refError = patientRefError(meta.patientRef);
+  const ageErr = ageError(meta.ageYears);
   const setMetaField = (k) => (e) => setMeta({ ...meta, [k]: e.target.value });
 
   // Merge OCR output: values as printed plus the printed unit when the API accepts it.
@@ -66,7 +70,8 @@ export default function DoctorPortal() {
   async function predict() {
     setError('');
     setShowErrors(true);
-    if (!meta.patientRef.trim()) { setError('Enter a patient reference.'); return; }
+    if (refError) { setError(refError); return; }
+    if (ageErr) { setError(ageErr); return; }
     if (Object.keys(validation.errors).length) {
       setError('Fix the highlighted CBC values or units first.');
       return;
@@ -120,7 +125,11 @@ export default function DoctorPortal() {
             <div className="space-y-1.5">
               <Label htmlFor="patientRef">Patient reference <span className="font-normal text-muted-foreground">(pseudonymous — no name/ID)</span></Label>
               <Input id="patientRef" value={meta.patientRef} onChange={setMetaField('patientRef')}
+                     aria-invalid={showErrors && refError ? true : undefined} maxLength={128}
                      placeholder="e.g. pt-hash-001" />
+              {(showErrors || meta.patientRef) && refError && (
+                <p className="text-[11px] text-destructive" data-testid="patient-ref-error">{refError}</p>
+              )}
             </div>
             <div className="mt-3.5 grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -136,7 +145,9 @@ export default function DoctorPortal() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ageYears">Age <ContextNote /></Label>
-                <Input id="ageYears" inputMode="numeric" value={meta.ageYears} onChange={setMetaField('ageYears')} />
+                <Input id="ageYears" inputMode="numeric" value={meta.ageYears} onChange={setMetaField('ageYears')}
+                       aria-invalid={ageErr ? true : undefined} maxLength={3} />
+                {ageErr && <p className="text-[11px] text-destructive" data-testid="age-error">{ageErr}</p>}
               </div>
             </div>
             <div className="mt-3.5 space-y-1.5">
@@ -160,6 +171,15 @@ export default function DoctorPortal() {
             </div>
             <CbcForm cbc={cbc} setCbc={setCbc} units={units} setUnits={setUnits} printedUnits={printedUnits}
                      validation={showErrors ? validation : { canonical: validation.canonical }} />
+            {validation.warnings.length > 0 && (
+              <Alert className="mt-3 border-warning/40" data-testid="cbc-warnings">
+                <TriangleAlert className="text-warning" />
+                <AlertDescription>
+                  <div className="font-medium text-foreground">Check these values (analysis still allowed):</div>
+                  <ul className="mt-1 list-disc pl-4">{validation.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+                </AlertDescription>
+              </Alert>
+            )}
 
             <Separator className="my-4" />
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-primary">
@@ -194,7 +214,7 @@ export default function DoctorPortal() {
             </CardContent>
           </Card>
 
-          {meta.patientRef.trim() && (
+          {meta.patientRef.trim() && !refError && (
             <Card>
               <CardHeader><CardTitle>Longitudinal trends</CardTitle></CardHeader>
               <CardContent>

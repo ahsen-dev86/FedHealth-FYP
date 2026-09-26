@@ -21,6 +21,7 @@ const delay = (ms = 350) => new Promise((res) => setTimeout(res, ms));
 
 let tokenGetter = () => null;
 export function setTokenGetter(fn) { tokenGetter = fn; }
+export function setUnauthorizedHandler() { /* mock sessions do not expire */ }
 
 // ---- fake session state ---------------------------------------------------
 let session = null; // { fullName, email, role, permissions }

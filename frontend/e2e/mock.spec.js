@@ -42,6 +42,36 @@ test('doctor: 10 CBC fields with units, four-class result and disclaimer', async
   await expect(page.locator('body')).not.toContainText(OLD_LABELS);
 });
 
+test('doctor: nonsense input is caught in the form with a specific message', async ({ page }) => {
+  await signIn(page, 'doctor3@fedhealth.demo');
+  await page.fill('#patientRef', '35202-1234567-1');
+  await expect(page.getByTestId('patient-ref-error')).toContainText('looks like a CNIC number');
+  await page.fill('#patientRef', 'pt-<script>');
+  await expect(page.getByTestId('patient-ref-error')).toContainText('only letters, digits');
+  await page.fill('#ageYears', 'abc');
+  await expect(page.getByTestId('age-error')).toContainText('whole number');
+  await page.fill('#patientRef', 'pt-mock-bad');
+  await page.fill('#ageYears', '34');
+
+  await page.fill('#cbc-HGB', 'abc');
+  await page.fill('#cbc-WBC', '9010'); // count typed while the unit is ×10³/µL
+  await page.fill('#cbc-HCT', '0.38'); // fraction typed while the unit is %
+  await page.getByRole('button', { name: 'Analyze CBC' }).click();
+  await expect(page.getByText('Fix the highlighted CBC values or units first.')).toBeVisible();
+  await expect(page.getByTestId('cbc-field-HGB')).toContainText('HGB must be a number');
+  await expect(page.getByTestId('cbc-field-WBC')).toContainText('9010 would fit if the unit is /mm³ (count)');
+  await expect(page.getByTestId('cbc-field-HCT')).toContainText('would fit if the unit is L/L');
+  await expect(page.getByTestId('confidence-scores')).toHaveCount(0); // nothing was sent
+
+  await fillExampleReport(page, { HGB: '2.4' }, { HGB: 'g/dL' });
+  await fillExampleReport(page, { WBC: '9,010', HCT: '38', RBC: '4.47', MCHC: '33', MCH: '28', MCV: '85' },
+    { WBC: '/mm3', HCT: '%', RBC: 'mil/mm3', MCHC: 'g/dL', MCH: 'pg', MCV: 'fL' });
+  await expect(page.getByTestId('cbc-warnings')).toContainText('MCHC is 33 but HGB / HCT x 100 gives 6.3');
+
+  await page.getByTestId('ocr-file').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await expect(page.getByText('Choose a PNG, JPEG, WebP or TIFF photo/scan of the report')).toBeVisible();
+});
+
 test('doctor: OCR fills values and printed units for review', async ({ page }) => {
   await signIn(page, 'doctor2@fedhealth.demo');
   await page.getByRole('button', { name: /Paste text/ }).click();
