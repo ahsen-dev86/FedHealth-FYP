@@ -98,7 +98,11 @@ async function main() {
       // Hash LF-normalized text so a CRLF checkout (core.autocrlf) is not an "edit".
       const sha = crypto.createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex');
       if (applied.has(file)) {
-        if (applied.get(file) !== sha) {
+        const rawSha = crypto.createHash('sha256').update(sql).digest('hex');
+        if (applied.get(file) === rawSha && rawSha !== sha) {
+          // Recorded by the first version of this script (raw CRLF bytes): same file.
+          await client.query('UPDATE schema_migrations SET sha256 = $2 WHERE filename = $1', [file, sha]);
+        } else if (applied.get(file) !== sha) {
           fail(`${file} changed after it was applied; write a new migration or rebuild with --reset`);
         }
         continue;

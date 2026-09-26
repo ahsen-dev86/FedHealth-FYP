@@ -13,6 +13,7 @@
 // telemetry. Report sites (labs table) appear under data intake instead.
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
+const { contract } = require('../contract');
 
 const RUN_COLUMNS = `t.id, t.scenario, t.seed, t.partition_mode, t.dirichlet_alpha, t.encryption, t.key_bits,
   t.total_rounds, t.labs, t.local_epochs, t.selected_round, t.lab_train_rows, t.runtime,
@@ -20,9 +21,11 @@ const RUN_COLUMNS = `t.id, t.scenario, t.seed, t.partition_mode, t.dirichlet_alp
   (t.model_id IS NOT NULL) AS registered_base_model`;
 const LATEST_FIRST = 't.completed_at DESC NULLS LAST, t.created_at DESC';
 
+/** The active version of the served model (other registry names never stand in for it). */
 async function activeModel() {
   const { rows } = await query(
-    'SELECT * FROM ml_models WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1');
+    'SELECT * FROM ml_models WHERE is_active = TRUE AND name = $1 ORDER BY created_at DESC LIMIT 1',
+    [contract.model_name]);
   return rows[0] || null;
 }
 

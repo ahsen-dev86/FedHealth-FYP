@@ -43,21 +43,22 @@ function prepareCbc({ cbc, units, canonicalUnits } = {}) {
   for (const feature of FEATURES) {
     const value = cbc[feature];
     if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) continue;
-    if (!(feature in declared)) throw new HttpError(400, `Declare the unit for ${feature}`);
+    const unit = declared[feature];
+    if (unit == null || !String(unit).trim()) throw new HttpError(400, `Declare the unit for ${feature}`);
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       throw new HttpError(400, `${feature} must be a finite number`);
     }
-    const factor = unitFactor(feature, declared[feature]);
-    if (factor === null) throw new HttpError(400, `Unsupported unit for ${feature}: ${declared[feature]}`);
+    const factor = unitFactor(feature, unit);
+    if (factor === null) throw new HttpError(400, `Unsupported unit for ${feature}: ${unit}`);
     const converted = value * factor;
     if (!inRange(feature, converted)) {
       const [lo, hi] = RANGES[feature];
       throw new HttpError(400, `${feature} outside supported range ${lo}..${hi} ${CANONICAL_UNITS[feature]} `
-        + `(got ${converted} after converting from ${declared[feature]}); verify units/value`);
+        + `(got ${converted} after converting from ${unit}); verify units/value`);
     }
     canonical[feature] = converted;
     reported[feature] = value;
-    usedUnits[feature] = String(declared[feature]);
+    usedUnits[feature] = String(unit);
   }
   if (Object.keys(canonical).length === 0) {
     throw new HttpError(400, 'At least one recognized CBC value is required');
