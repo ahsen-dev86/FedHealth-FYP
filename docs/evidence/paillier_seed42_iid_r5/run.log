@@ -1,0 +1,62 @@
+[validation] round 0: loss=0.3811, macro-F1=0.867, eligible=True
+
+[aggregator] round 1: summed 3 encrypted updates (N=2240); no decryption performed
+[validation] round 1: loss=0.3814, macro-F1=0.865, eligible=True
+[aggregator] round 2: summed 3 encrypted updates (N=2240); no decryption performed
+[validation] round 2: loss=0.3814, macro-F1=0.867, eligible=True
+[aggregator] round 3: summed 3 encrypted updates (N=2240); no decryption performed
+[validation] round 3: loss=0.3813, macro-F1=0.869, eligible=True
+[aggregator] round 4: summed 3 encrypted updates (N=2240); no decryption performed
+[validation] round 4: loss=0.3818, macro-F1=0.869, eligible=True
+[aggregator] round 5: summed 3 encrypted updates (N=2240); no decryption performed
+[validation] round 5: loss=0.3817, macro-F1=0.869, eligible=True
+Selected round 0 of 5; test untouched.
+[validation] round 0: loss=0.3811, macro-F1=0.867, eligible=True
+[validation] round 1: loss=0.3814, macro-F1=0.865, eligible=True
+[validation] round 2: loss=0.3814, macro-F1=0.867, eligible=True
+[validation] round 3: loss=0.3813, macro-F1=0.869, eligible=True
+[validation] round 4: loss=0.3818, macro-F1=0.869, eligible=True
+[validation] round 5: loss=0.3817, macro-F1=0.869, eligible=True
+[
+ {
+  "round": 1,
+  "max_abs_weight_difference": 0.0,
+  "plain_log_loss": 0.3814473464780452,
+  "encrypted_log_loss": 0.3814473464780452,
+  "plain_macro_f1": 0.8647403241811361,
+  "encrypted_macro_f1": 0.8647403241811361
+ },
+ {
+  "round": 2,
+  "max_abs_weight_difference": 0.0,
+  "plain_log_loss": 0.3813522445507585,
+  "encrypted_log_loss": 0.3813522445507585,
+  "plain_macro_f1": 0.8668739099574818,
+  "encrypted_macro_f1": 0.8668739099574818
+ },
+ {
+  "round": 3,
+  "max_abs_weight_difference": 0.0,
+  "plain_log_loss": 0.3813297249050874,
+  "encrypted_log_loss": 0.3813297249050874,
+  "plain_macro_f1": 0.8688827643840087,
+  "encrypted_macro_f1": 0.8688827643840087
+ },
+ {
+  "round": 4,
+  "max_abs_weight_difference": 0.0,
+  "plain_log_loss": 0.3817925035333477,
+  "encrypted_log_loss": 0.3817925035333477,
+  "plain_macro_f1": 0.8688827643840087,
+  "encrypted_macro_f1": 0.8688827643840087
+ },
+ {
+  "round": 5,
+  "max_abs_weight_difference": 0.0,
+  "plain_log_loss": 0.3817051176967595,
+  "encrypted_log_loss": 0.3817051176967595,
+  "plain_macro_f1": 0.8688827643840087,
+  "encrypted_macro_f1": 0.8688827643840087
+ }
+]
+exit=0
