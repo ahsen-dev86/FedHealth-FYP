@@ -4,6 +4,11 @@ import os
 import sys
 import time
 from pathlib import Path
+# Pin TensorFlow's oneDNN kernels off before TF loads so single predictions are
+# bit-for-bit reproducible whoever launches the service (as in tests/conftest.py).
+# Both settings reproduce the recorded validation results (421/480, log loss
+# 0.35894); oneDNN's different float rounding only moves rare borderline cases.
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 from flask import Flask, request, jsonify
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

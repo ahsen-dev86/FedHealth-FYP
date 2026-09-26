@@ -246,7 +246,7 @@ async function run(db) {
   check('audit_logs cannot be updated by the app role', blocked === '42501', `SQLSTATE ${blocked}`);
 
   log('\n## A4 High leukemia scores raise alerts and NIH surveillance entries');
-  const district = `E2E District ${RUN.replace(/\d/g, (d) => 'abcdefghij'[d])}`; // place names are letters only
+  const district = `Test District ${RUN.replace(/\d/g, (d) => 'abcdefghij'[d])}`; // place names are letters only
   const flagged = [];
   for (const [i, cbc] of LEUKEMIA_ROWS.entries()) {
     const r = await http('POST', '/predict', { token: doctor, body: { patientRef: `e2e-leuk-${RUN}-${i}`, district, province: 'Punjab', cbc, canonicalUnits: true } });
