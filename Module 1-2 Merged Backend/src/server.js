@@ -30,6 +30,14 @@ async function checkInferenceContract(attempt = 1) {
   }
 }
 
+// Last-resort logging: a stray rejection must be visible, not silently crash or hang
+// the API. Route errors never get here (asyncHandler forwards them to errorHandler).
+process.on('unhandledRejection', (reason) => console.error('[fedhealth] unhandled rejection:', reason));
+process.on('uncaughtException', (err) => {
+  console.error('[fedhealth] uncaught exception, exiting:', err);
+  process.exit(1); // state may be corrupt; restart it (tools/run-local.ps1 -Start, or a compose restart policy)
+});
+
 app.listen(port, () => {
   console.log(`[fedhealth] backend API listening on http://localhost:${port}`);
   checkInferenceContract();

@@ -18,7 +18,7 @@ const alerting = require('./alerting');
 const { logEvent } = require('../middleware/audit');
 const { withTransaction } = require('../db/pool');
 const { HttpError } = require('../middleware/errors');
-const { CLASSES, FEATURES, contract } = require('../contract');
+const { CLASSES, FEATURES, contract, consistencyWarnings } = require('../contract');
 
 const DISCLAIMER = 'Screening support only, not a diagnosis. The model scores the 10 CBC values only; '
   + 'sex, age, symptoms and location are stored for context and are not model inputs. '
@@ -73,7 +73,7 @@ async function persistPrediction({ report, inf, actor, db }) {
 }
 
 /** The response body shared by both prediction routes. */
-function presentPrediction({ report, prediction, alerts, model, inf }) {
+function presentPrediction({ report, prediction, alerts, model, inf, warnings }) {
   return {
     persisted: true,
     report,
@@ -90,6 +90,8 @@ function presentPrediction({ report, prediction, alerts, model, inf }) {
       notModelInputs: contract.not_model_inputs,
       riskRule: inf.risk_rule,
       riskThreshold: inf.risk_threshold,
+      // Non-blocking data-quality checks on the entered values (e.g. MCHC vs HGB/HCT).
+      dataQualityWarnings: warnings ?? consistencyWarnings(report.cbc || {}),
     },
     rule_flags: inf.rule_flags || {},
     alerts,

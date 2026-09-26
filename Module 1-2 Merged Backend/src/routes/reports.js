@@ -21,7 +21,7 @@ const fs = require('fs');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requirePermission } = require('../middleware/rbac');
 const { auditAction } = require('../middleware/audit');
-const { asyncHandler, HttpError } = require('../middleware/errors');
+const { asyncHandler, HttpError, uuidParam } = require('../middleware/errors');
 const LabReports = require('../models/labReports');
 const Labs = require('../models/labs');
 const Inference = require('../services/inferenceClient');
@@ -30,10 +30,15 @@ const { runPrediction, persistPrediction, presentPrediction } = require('../serv
 const { withTransaction } = require('../db/pool');
 const ocr = require('../services/ocr');
 const nlp = require('../services/nlp');
-const { reportBody, predictExistingBody, symptomsBody } = require('../validators/domain');
+const { reportBody, predictExistingBody, symptomsBody, patientRef } = require('../validators/domain');
 const { contract } = require('../contract');
 
 const router = express.Router();
+router.param('id', uuidParam);
+router.param('ref', (req, res, next, value) => {
+  const r = patientRef.safeParse(value);
+  return next(r.success ? undefined : new HttpError(400, r.error.issues[0].message));
+});
 const OCR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/tiff']);
 const upload = multer({
   dest: path.join(os.tmpdir(), 'fedhealth-uploads'),
@@ -88,7 +93,7 @@ router.post('/reports', requireAuth,
     const prepared = prepareCbc(body);
     const report = await storeReport(req.user, body, prepared);
     res.locals.reportId = report.id;
-    res.status(201).json(report);
+    res.status(201).json({ ...report, data_quality_warnings: prepared.warnings });
   }));
 
 // --- Read one report ----------------------------------------------------------
@@ -137,7 +142,7 @@ router.post('/predict', requireAuth,
       return { report, ...(await persistPrediction({ report, inf, actor: req.user, db })) };
     });
     res.locals.reportId = stored.report.id;
-    res.status(201).json(presentPrediction({ ...stored, inf }));
+    res.status(201).json(presentPrediction({ ...stored, inf, warnings: prepared.warnings }));
   }));
 
 // --- OCR: report image or pasted report text -> 10 features + printed units --

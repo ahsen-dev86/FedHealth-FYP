@@ -11,11 +11,12 @@ const express = require('express');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requirePermission } = require('../middleware/rbac');
 const { auditAction } = require('../middleware/audit');
-const { asyncHandler, HttpError } = require('../middleware/errors');
+const { asyncHandler, HttpError, uuidParam } = require('../middleware/errors');
 const Predictions = require('../models/predictions');
 const { confirmBody } = require('../validators/domain');
 
 const router = express.Router();
+router.param('id', uuidParam);
 
 router.get('/predictions/:id', requireAuth, requirePermission('prediction:read'),
   asyncHandler(async (req, res) => {

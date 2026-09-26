@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 const { contract } = require('../contract');
+const { HttpError } = require('../middleware/errors');
 
 const RUN_COLUMNS = `t.id, t.scenario, t.seed, t.partition_mode, t.dirichlet_alpha, t.encryption, t.key_bits,
   t.total_rounds, t.labs, t.local_epochs, t.selected_round, t.lab_train_rows, t.runtime,
@@ -91,6 +92,7 @@ async function accuracyHistory({ runId = null } = {}) {
       runs: [],
     };
   }
+  if (runId && !all.some((r) => r.id === runId)) throw new HttpError(404, 'federated run not found');
   const model = await activeModel();
   const run = (runId && all.find((r) => r.id === runId))
     || all.find((r) => r.base_model_version === model?.version && r.scenario === 'iid' && r.encryption === 'none')

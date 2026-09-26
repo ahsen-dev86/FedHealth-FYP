@@ -9,15 +9,16 @@
 // ---------------------------------------------------------------------------
 const { HttpError } = require('../middleware/errors');
 const {
-  FEATURES, CANONICAL_UNITS, RANGES, unitFactor, inRange,
+  FEATURES, CANONICAL_UNITS, RANGES, unitFactor, inRange, plausibleUnits, consistencyWarnings,
 } = require('../contract');
 
 /**
  * @param {object}  args.cbc             {FEATURE: number|null} as entered/printed
  * @param {object} [args.units]          {FEATURE: unit string} as declared/printed
  * @param {boolean}[args.canonicalUnits] true when every value is already canonical
- * @returns {{ canonical, reported, units }} canonical values (model input), the
- *          values as given, and the declared unit strings, all keyed by feature
+ * @returns {{ canonical, reported, units, warnings }} canonical values (model
+ *          input), the values as given, the declared unit strings, and
+ *          non-blocking data-quality warnings (inconsistent red-cell indices)
  */
 function prepareCbc({ cbc, units, canonicalUnits } = {}) {
   if (!cbc || typeof cbc !== 'object' || Array.isArray(cbc)) {
@@ -53,8 +54,10 @@ function prepareCbc({ cbc, units, canonicalUnits } = {}) {
     const converted = value * factor;
     if (!inRange(feature, converted)) {
       const [lo, hi] = RANGES[feature];
+      const fits = plausibleUnits(feature, value);
       throw new HttpError(400, `${feature} outside supported range ${lo}..${hi} ${CANONICAL_UNITS[feature]} `
-        + `(got ${converted} after converting from ${unit}); verify units/value`);
+        + `(got ${converted} after converting from ${unit}); verify units/value`
+        + (fits.length ? ` — ${value} would fit if the unit is ${fits.join(' or ')}` : ''));
     }
     canonical[feature] = converted;
     reported[feature] = value;
@@ -63,7 +66,7 @@ function prepareCbc({ cbc, units, canonicalUnits } = {}) {
   if (Object.keys(canonical).length === 0) {
     throw new HttpError(400, 'At least one recognized CBC value is required');
   }
-  return { canonical, reported, units: usedUnits };
+  return { canonical, reported, units: usedUnits, warnings: consistencyWarnings(canonical) };
 }
 
 module.exports = { prepareCbc };

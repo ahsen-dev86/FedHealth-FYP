@@ -20,14 +20,37 @@ MODEL_CONFIGS = {schema.MODEL_NAME: {"features": schema.FEATURES, "classes": sch
                 "artifact_dir": MODEL_DIR}}
 PREDICTORS = {n: P.build_predictor(n, c) for n, c in MODEL_CONFIGS.items()}
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024  # a CBC request is < 1 KB; refuse floods with 413
+
+
+@app.errorhandler(404)
+@app.errorhandler(405)
+@app.errorhandler(413)
+def _http_error(err):
+    return jsonify(error=err.description if err.code != 413 else "Request body is too large"), err.code
+
+
+@app.errorhandler(Exception)
+def _unexpected(err):
+    # JSON, not Flask's HTML page, and no internals in the response body.
+    app.logger.exception("unexpected inference error")
+    code = getattr(err, "code", 500)
+    return jsonify(error="Internal error in the inference service" if code >= 500 else str(err)), code
 
 
 def _unauthorized():
     return INFERENCE_API_KEY and request.headers.get("X-API-Key") != INFERENCE_API_KEY
 
 
+def _is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 def _cbc_and_units(body):
-    """Validate the request shape shared by /infer and /normalize; return (cbc, units) or an error string."""
+    """Validate the request shape shared by /infer and /normalize; return (cbc, units) or an error string.
+
+    Same rules as the Node API: values are JSON numbers (null = not measured; no numeric
+    strings, booleans, lists or objects) and units are non-empty strings."""
     cbc, units = body.get("cbc"), body.get("units")
     if body.get("canonical_units") is True and units is None:
         units = schema.UNITS
@@ -39,6 +62,12 @@ def _cbc_and_units(body):
     unknown = sorted(set(units) - set(schema.FEATURES))
     if unknown:
         return None, None, f"Units given for unknown field(s): {', '.join(unknown)}"
+    for feature, value in cbc.items():
+        if value is not None and not _is_number(value):
+            return None, None, f"{feature} must be a finite number"
+    for feature, unit in units.items():
+        if not isinstance(unit, str) or not unit.strip() or len(unit) > 32:
+            return None, None, f"Unit for {feature} must be a short text such as {schema.UNITS[feature]!r}"
     return cbc, units, None
 
 
