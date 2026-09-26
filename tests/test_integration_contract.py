@@ -55,7 +55,7 @@ READ_STDIN = "const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
 # --- schema.py -> exported JSON ----------------------------------------------------------------
 def test_exported_contract_is_current():
     import export_contract
-    assert CONTRACT_JSON.read_text(encoding="utf-8") == export_contract.render(), \
+    assert CONTRACT_JSON.read_text(encoding="utf-8").replace("\r\n", "\n") == export_contract.render(), \
         "Run: python tools/export_contract.py"
 
 

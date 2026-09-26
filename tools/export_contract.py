@@ -94,7 +94,8 @@ def main():
     stale = []
     for target in TARGETS:
         if args.check:
-            if not target.exists() or target.read_text(encoding="utf-8") != text:
+            # Compare LF-normalized: a Windows checkout may have converted the file to CRLF.
+            if not target.exists() or target.read_text(encoding="utf-8").replace("\r\n", "\n") != text:
                 stale.append(target)
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
