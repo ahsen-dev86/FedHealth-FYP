@@ -7,7 +7,10 @@
 -- REVOKE elsewhere in this file to keep audit_logs honest — the grant
 -- list below simply never includes UPDATE/DELETE on it.
 --
--- CHANGE THIS PASSWORD before this runs anywhere but a laptop.
+-- The placeholder below is only used when the role does not exist yet (the
+-- Docker init path). scripts/db-setup.js creates fedhealth_app first with the
+-- random PGPASSWORD from the git-ignored backend .env and re-applies it on every
+-- run, so a local setup never keeps this placeholder.
 
 DO $$
 BEGIN

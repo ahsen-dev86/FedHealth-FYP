@@ -11,8 +11,8 @@ async function create({ name, district, province, latitude, longitude, limsType 
   return rows[0];
 }
 
-async function findById(id) {
-  const { rows } = await query('SELECT * FROM labs WHERE id = $1', [id]);
+async function findById(id, db = null) {
+  const { rows } = await (db ? db.query.bind(db) : query)('SELECT * FROM labs WHERE id = $1', [id]);
   return rows[0] || null;
 }
 
@@ -26,4 +26,4 @@ async function listAll() {
   return rows;
 }
 
-module.exports = { create, findById, findByFlClientId, listAll };
+module.exports = { create, findById, findByFlClientId, listAll, list: listAll };

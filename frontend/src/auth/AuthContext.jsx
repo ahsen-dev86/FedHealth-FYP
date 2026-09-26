@@ -7,10 +7,11 @@
 // use an httpOnly cookie instead (XSS hardening) — flagged for the supervisor.
 // ---------------------------------------------------------------------------
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
-import { api, setTokenGetter } from '../api/client';
+import { api, setTokenGetter, setUnauthorizedHandler } from '../api/client';
 
 const AuthContext = createContext(null);
 const TOKEN_KEY = 'fedhealth_token';
+export const NOTICE_KEY = 'fedhealth_notice';
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
@@ -53,6 +54,16 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUser(null);
   }, []);
+
+  // Any API call rejected with 401 while signed in = the session expired or the
+  // account was suspended: sign out and tell the user on the login page.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      try { sessionStorage.setItem(NOTICE_KEY, 'Your session has expired. Please sign in again.'); } catch { /* ignore */ }
+      logout();
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   // --- Auth flow calls (return the backend payloads to the pages) ---------
   const login = useCallback((email, password) =>

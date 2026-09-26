@@ -29,4 +29,23 @@ async function getClient() {
   return pool.connect();
 }
 
-module.exports = { pool, query, getClient };
+/**
+ * Run fn(client) inside BEGIN/COMMIT on one pooled client; ROLLBACK on error.
+ * Models accept that client as their optional last `db` argument.
+ */
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { pool, query, getClient, withTransaction };

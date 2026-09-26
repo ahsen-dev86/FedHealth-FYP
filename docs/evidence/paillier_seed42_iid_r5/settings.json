@@ -1,0 +1,27 @@
+{
+  "seed": 42,
+  "mode": "iid",
+  "alpha": null,
+  "labs": 3,
+  "rounds": 5,
+  "local_epochs": 1,
+  "batch_size": 32,
+  "lr": 0.0001,
+  "optimizer": "fresh Adam per lab per round",
+  "train_rows": {
+    "lab-00": 747,
+    "lab-01": 747,
+    "lab-02": 746
+  },
+  "all_labs_each_round": true,
+  "runtime": "sequential simulation, serialized ciphertext",
+  "test_used": false,
+  "encryption": {
+    "scheme": "Paillier (additively homomorphic)",
+    "modulus_bits": 2048,
+    "weights_per_update": 2916,
+    "aggregator_holds_private_key": false,
+    "key_custody": "all labs share one keypair; no threshold Paillier",
+    "transport": "in-process serialized bytes; no network TLS in this simulation"
+  }
+}

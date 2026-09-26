@@ -1,11 +1,14 @@
 // frontend/src/surveillance/AlertsFeed.jsx
 // The predictive-alerting feed (scope 6.5.2): outbreak clusters + high-risk
 // cases raised by the backend. Health officials can filter by status and
-// acknowledge alerts. All alert content is aggregate/anonymized.
+// acknowledge alerts. All alert content is aggregate/anonymized. A high-risk
+// case alert means the leukemia screening score crossed the demo threshold;
+// it is a screening flag, not a diagnosis.
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { conditionLabel, conditionColor } from '../lib/format';
 
 const SEV_VARIANT = {
   critical: 'border-destructive/30 bg-destructive/10',
@@ -63,6 +66,12 @@ export default function AlertsFeed({ onData }) {
                 <div className="mt-0.5 text-[13px] text-muted-foreground">{a.description}</div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <Badge variant="outline" className="capitalize">{a.type.replace(/_/g, ' ')}</Badge>
+                  {a.condition && (
+                    <Badge variant="outline" className="gap-1">
+                      <span className="size-2 rounded-full" style={{ background: conditionColor(a.condition) }} />
+                      {conditionLabel(a.condition)}
+                    </Badge>
+                  )}
                   {a.district ? `${a.district} · ` : ''}{new Date(a.created_at).toLocaleString()}
                 </div>
               </div>

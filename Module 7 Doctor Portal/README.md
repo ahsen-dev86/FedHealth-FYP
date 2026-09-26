@@ -1,5 +1,7 @@
 # FedHealth — Frontend (Module 7: Doctor Portal)
 
+> **Superseded (feat/integration, 2026-09-26).** The maintained doctor portal (src/doctor, src/auth, src/components) lives in `frontend/`. The files in this folder are the older standalone copy (nine-class labels, 6-14 CBC fields) and are not built, tested or updated; do not edit them. See docs/INTEGRATION.md.
+
 A React (Vite) single-page app. Module 7 delivers the shared auth shell and the
 **Doctor Portal**; the **Surveillance Dashboard** (Module 8) slots into the same
 app under `/surveillance`. Role-based routing sends each user to their area,

@@ -1,0 +1,42 @@
+[
+  {
+    "round": 1,
+    "max_abs_weight_difference": 0.0,
+    "plain_log_loss": 0.3814473464780452,
+    "encrypted_log_loss": 0.3814473464780452,
+    "plain_macro_f1": 0.8647403241811361,
+    "encrypted_macro_f1": 0.8647403241811361
+  },
+  {
+    "round": 2,
+    "max_abs_weight_difference": 0.0,
+    "plain_log_loss": 0.3813522445507585,
+    "encrypted_log_loss": 0.3813522445507585,
+    "plain_macro_f1": 0.8668739099574818,
+    "encrypted_macro_f1": 0.8668739099574818
+  },
+  {
+    "round": 3,
+    "max_abs_weight_difference": 0.0,
+    "plain_log_loss": 0.3813297249050874,
+    "encrypted_log_loss": 0.3813297249050874,
+    "plain_macro_f1": 0.8688827643840087,
+    "encrypted_macro_f1": 0.8688827643840087
+  },
+  {
+    "round": 4,
+    "max_abs_weight_difference": 0.0,
+    "plain_log_loss": 0.3817925035333477,
+    "encrypted_log_loss": 0.3817925035333477,
+    "plain_macro_f1": 0.8688827643840087,
+    "encrypted_macro_f1": 0.8688827643840087
+  },
+  {
+    "round": 5,
+    "max_abs_weight_difference": 0.0,
+    "plain_log_loss": 0.3817051176967595,
+    "encrypted_log_loss": 0.3817051176967595,
+    "plain_macro_f1": 0.8688827643840087,
+    "encrypted_macro_f1": 0.8688827643840087
+  }
+]

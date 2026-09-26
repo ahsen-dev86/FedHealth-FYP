@@ -2,14 +2,24 @@
   "name": "fedhealth-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "FedHealth backend — auth (RBAC + MFA + audit) and (later) domain API",
+  "description": "FedHealth backend: auth (RBAC + MFA + audit), Module 6 domain API, model health",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/bootstrap.js",
     "dev": "node --watch src/bootstrap.js",
+    "db:setup": "node scripts/db-setup.js",
+    "register:model": "node scripts/register-model.js",
+    "import:fl": "node scripts/import-fl-history.js --all ../FYP_model_data_drive/FYP/four_class/four_class_v1",
     "bootstrap:admin": "node scripts/bootstrap-admin.js",
     "totp:code": "node scripts/totp-code.js",
-    "test": "node test/run_layer_tests.js"
+    "test": "npm run test:unit && npm run test:db",
+    "test:unit": "node --test \"test/unit/*.test.js\"",
+    "test:db": "node test/run_layer_tests.js",
+    "test:e2e": "node scripts/e2e-acceptance.js",
+    "demo:users": "node scripts/create-demo-users.js",
+    "demo:code": "node scripts/demo-code.js",
+    "test:robustness": "node scripts/e2e-robustness.js",
+    "snapshot:model-health": "node scripts/export-model-health-snapshot.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,8 +29,10 @@
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0",
     "pg": "^8.12.0",
     "qrcode": "^1.5.4",
+    "sharp": "^0.34.5",
     "speakeasy": "^2.0.0",
     "zod": "^3.23.8"
   }

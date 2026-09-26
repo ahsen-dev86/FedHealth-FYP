@@ -1,11 +1,8 @@
 // frontend/src/components/TrendChart.jsx
-// Longitudinal tracking (scope 6.2.2): plots a chosen CBC index across a
+// Longitudinal tracking (scope 6.2.2): plots one of the 10 CBC values across a
 // patient's visits so the doctor can see trajectories (e.g. falling platelets
-// or hemoglobin). Uses recharts.
-//
-// LIBRARY NOTE: recharts is an addition to the fixed stack (a React charting
-// lib). Flagged as a minor dependency choice; hand-rolled SVG was the
-// alternative but recharts is standard and defensible.
+// or hemoglobin). Reports store canonical values, so every visit is on the same
+// unit regardless of how the paper report printed it. Uses recharts.
 import { useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -13,12 +10,9 @@ import {
 import { CBC_FIELDS } from '../lib/format';
 import { Button } from './ui/button';
 
-// Sensible defaults to plot; the doctor can switch the index.
-const PLOTTABLE = ['HGB', 'PLT', 'MCV', 'WBC', 'RBC', 'MCH'];
-
 export default function TrendChart({ reports }) {
   const [metric, setMetric] = useState('HGB');
-  const unit = CBC_FIELDS.find((f) => f.key === metric)?.unit || '';
+  const field = CBC_FIELDS.find((f) => f.key === metric);
 
   // reports are oldest-first from the API; map to chart points.
   const data = (reports || [])
@@ -28,31 +22,32 @@ export default function TrendChart({ reports }) {
     }))
     .filter((p) => p.value != null);
 
-  if (data.length < 2) {
-    return <p className="text-sm text-muted-foreground">Need at least two visits with a {metric} value to show a trend.</p>;
-  }
-
   return (
     <div>
       <div className="mb-2.5 flex flex-wrap gap-1.5">
-        {PLOTTABLE.map((m) => (
-          <Button key={m} type="button" size="sm" variant={m === metric ? 'default' : 'outline'}
-                  className="font-mono" onClick={() => setMetric(m)}>
-            {m}
+        {CBC_FIELDS.map((f) => (
+          <Button key={f.key} type="button" size="sm" variant={f.key === metric ? 'default' : 'outline'}
+                  className="font-mono" onClick={() => setMetric(f.key)}>
+            {f.label}
           </Button>
         ))}
       </div>
-      <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-          <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} />
-          <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                 label={{ value: unit, angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: 'var(--muted-foreground)' } }} />
-          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }} />
-          <Line type="monotone" dataKey="value" stroke="var(--chart-1)" strokeWidth={2}
-                dot={{ r: 3, fill: 'var(--chart-1)' }} isAnimationActive={false} name={metric} />
-        </LineChart>
-      </ResponsiveContainer>
+      {data.length < 2 ? (
+        <p className="text-sm text-muted-foreground">Need at least two visits with a {field.label} value to show a trend.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} />
+            <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} domain={['auto', 'auto']}
+                   label={{ value: field.canonicalUnit, angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: 'var(--muted-foreground)' } }} />
+            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }}
+                     formatter={(v) => [`${v} ${field.canonicalUnit}`, field.label]} />
+            <Line type="monotone" dataKey="value" stroke="var(--chart-1)" strokeWidth={2}
+                  dot={{ r: 3, fill: 'var(--chart-1)' }} isAnimationActive={false} name={field.label} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }

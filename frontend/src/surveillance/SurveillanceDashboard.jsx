@@ -5,12 +5,17 @@
 //   * Compliance   — immutable audit-log oversight
 // Everything shown is aggregated + anonymized; the surveillance role cannot
 // reach individual reports or predictions (enforced by backend RBAC).
+// Conditions are the model's classes; clusters group screening results by their
+// highest score (not confirmed diagnoses), and 'healthy' results are not shown
+// as disease clusters.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import ClusterMap from './ClusterMap';
 import AlertsFeed from './AlertsFeed';
 import CompliancePanel from './CompliancePanel';
-import { CONDITION_LABELS, conditionLabel } from '../lib/format';
+import { conditionLabel, conditionColor } from '../lib/format';
+import { CLASSES } from '../lib/contract';
+import { PROVINCES } from '../lib/districts';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
@@ -19,9 +24,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 
-const PROVINCES = ['Punjab', 'Sindh', 'KPK', 'Balochistan', 'Islamabad', 'Gilgit-Baltistan', 'AJK'];
-const CONDITIONS = ['leukemia', 'leukemia_with_thrombocytopenia', 'thrombocytopenia',
-  'iron_deficiency_anemia', 'other_microcytic_anemia', 'macrocytic_anemia', 'beta_thal_trait'];
+const CONDITIONS = CLASSES.filter((c) => c !== 'healthy');
 
 export default function SurveillanceDashboard() {
   const [tab, setTab] = useState('surveillance');
@@ -37,7 +40,8 @@ export default function SurveillanceDashboard() {
     if (filters.province !== '__all') qs.set('province', filters.province);
     if (filters.condition !== '__all') qs.set('condition', filters.condition);
     try {
-      setClusters(await api.get(`/nih/clusters?${qs.toString()}`));
+      const rows = await api.get(`/nih/clusters?${qs.toString()}`);
+      setClusters(rows.filter((c) => c.condition !== 'healthy'));
     } catch (e) { setErr(e.message); setClusters([]); }
   }, [filters]);
 
@@ -71,7 +75,7 @@ export default function SurveillanceDashboard() {
         <TabsContent value="surveillance" className="mt-4">
           {/* Summary stats */}
           <div className="mb-4 grid grid-cols-3 gap-3.5">
-            {[['Predictions', stats.cases], ['High-risk cases', stats.highRisk], ['Districts reporting', stats.districts]].map(([label, val]) => (
+            {[['Screening results (non-healthy)', stats.cases], ['Leukemia risk flags', stats.highRisk], ['Districts reporting', stats.districts]].map(([label, val]) => (
               <Card key={label}>
                 <CardContent>
                   <div className="text-xs text-muted-foreground">{label}</div>
@@ -96,11 +100,11 @@ export default function SurveillanceDashboard() {
                 </Select>
                 <Select value={filters.condition} onValueChange={(v) => setFilters((f) => ({ ...f, condition: v }))}>
                   <SelectTrigger className="w-[190px]">
-                    <SelectValue>{(v) => (v === '__all' ? 'All conditions' : (CONDITION_LABELS[v] || v))}</SelectValue>
+                    <SelectValue>{(v) => (v === '__all' ? 'All conditions' : conditionLabel(v))}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__all">All conditions</SelectItem>
-                    {CONDITIONS.map((c) => <SelectItem key={c} value={c}>{CONDITION_LABELS[c] || c}</SelectItem>)}
+                    {CONDITIONS.map((c) => <SelectItem key={c} value={c}>{conditionLabel(c)}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <div className="flex gap-1">
@@ -117,8 +121,10 @@ export default function SurveillanceDashboard() {
                 ? <p className="text-sm text-muted-foreground">Loading map…</p>
                 : <ClusterMap clusters={clusters} mode={mapMode} />}
               <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
-                <span><span className="text-primary">●</span> cluster (marker size ∝ cases)</span>
-                <span><span className="text-destructive">●</span> contains high-risk cases</span>
+                {CONDITIONS.map((c) => (
+                  <span key={c}><span style={{ color: conditionColor(c) }}>●</span> {conditionLabel(c)}</span>
+                ))}
+                <span>marker size ∝ cases · thick red ring = leukemia risk flags</span>
               </div>
 
               {/* Cluster table */}
@@ -129,15 +135,20 @@ export default function SurveillanceDashboard() {
                       <TableHead>District</TableHead>
                       <TableHead>Condition</TableHead>
                       <TableHead className="text-right">Cases</TableHead>
-                      <TableHead className="text-right">High-risk</TableHead>
-                      <TableHead className="text-right">Avg conf.</TableHead>
+                      <TableHead className="text-right">Risk flags</TableHead>
+                      <TableHead className="text-right">Avg top score</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {clusters.map((c, i) => (
                       <TableRow key={i}>
                         <TableCell>{c.district || '—'}</TableCell>
-                        <TableCell>{conditionLabel(c.condition)}</TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="size-2 rounded-full" style={{ background: conditionColor(c.condition) }} />
+                            {conditionLabel(c.condition)}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{Number(c.case_count)}</TableCell>
                         <TableCell className={`text-right font-mono tabular-nums ${Number(c.high_risk_count) ? 'text-destructive' : ''}`}>
                           {Number(c.high_risk_count)}

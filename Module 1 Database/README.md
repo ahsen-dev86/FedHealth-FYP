@@ -1,5 +1,11 @@
 # FedHealth — Database Module (Module 1)
 
+> **Superseded (feat/integration, 2026-09-26).** The schema that actually runs is
+> `Module 1-2 Merged Backend/init/001-010` (applied by `scripts/db-setup.js`) and the data-access
+> code is `Module 1-2 Merged Backend/src/models/`. The files here (`schema.sql`, `seed.sql`,
+> `003_four_class_model_contract.sql`, the model `.js` files) are the older standalone copies; the
+> four-class contract migration is folded into `init/009`. Do not edit or apply these copies.
+
 PostgreSQL backbone for FedHealth: RBAC, users/MFA, labs (FL nodes), CBC lab
 reports, an ML-model registry, confidence-score predictions with doctor
 confirmation, an immutable hash-chained audit log, alerts, and the aggregated
