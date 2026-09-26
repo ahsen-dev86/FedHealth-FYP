@@ -34,3 +34,11 @@ manual Colab/Docker/encryption acceptance gates.
 Encrypted ANN federation is implemented in `Module 5 Encryption/` and matches plaintext FedAvg
 (2048-bit, 3 rounds; see `docs/VERIFICATION.md`). Open: 20-round run on the real Colab model,
 threshold key custody, network transport for the encrypted path, and Docker.
+
+## Integration checkpoint (feat/integration, Phase A)
+
+Database (local PostgreSQL 18 + PostGIS, `init/001`-`010` with four-class CHECKs), inference service
+(seed-42 bundle via `FEDHEALTH_MODEL_DIR`), backend (Module 6 domain API mounted), model registry
+(measured test metrics), 12 imported Colab federated runs and one 5-round 2048-bit Paillier run on the
+real model (equal to plaintext FedAvg) are integrated and verified over HTTP/SQL. The frontend (Phase B)
+is not aligned yet. See `docs/INTEGRATION_HANDOFF.md`.
