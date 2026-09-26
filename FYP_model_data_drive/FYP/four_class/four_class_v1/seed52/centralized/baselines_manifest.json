@@ -1,0 +1,7 @@
+{
+  "data_sha256": "ec5dba6d3a72ae479bac9856ed368128565596fa7353e733531b0c11ee29ff04",
+  "sha256": {
+    "logistic_regression.joblib": "c9ff9906289dfe0bd91a94c79bfb167164635dd4b2ea048a5d611de175397174",
+    "random_forest.joblib": "528b343d9b9d3e389e5a25150c0005e82eb96969ce10e11876810f18d9cb9d68"
+  }
+}

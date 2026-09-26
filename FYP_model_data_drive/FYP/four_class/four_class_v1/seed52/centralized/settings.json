@@ -1,0 +1,17 @@
+{
+  "seed": 52,
+  "epochs_max": 100,
+  "patience": 10,
+  "min_delta": 0.0001,
+  "batch_size": 32,
+  "ann_lr": 0.001,
+  "dropout": 0.3,
+  "l2": 0.0001,
+  "xgb_trees_max": 300,
+  "xgb_depth": 4,
+  "xgb_lr": 0.05,
+  "xgb_early_stopping": 20,
+  "actual_epochs": 62,
+  "xgb_best_iteration": 126,
+  "test_used": false
+}

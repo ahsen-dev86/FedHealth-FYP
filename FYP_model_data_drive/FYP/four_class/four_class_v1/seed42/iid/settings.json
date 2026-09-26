@@ -1,0 +1,19 @@
+{
+  "seed": 42,
+  "mode": "iid",
+  "alpha": null,
+  "labs": 3,
+  "rounds": 20,
+  "local_epochs": 1,
+  "batch_size": 32,
+  "lr": 0.0001,
+  "optimizer": "fresh Adam per lab per round",
+  "train_rows": {
+    "lab-00": 747,
+    "lab-01": 747,
+    "lab-02": 746
+  },
+  "all_labs_each_round": true,
+  "runtime": "sequential Flower callbacks",
+  "test_used": false
+}

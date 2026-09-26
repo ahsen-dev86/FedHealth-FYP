@@ -1,0 +1,96 @@
+{
+  "data_sha256": "ec5dba6d3a72ae479bac9856ed368128565596fa7353e733531b0c11ee29ff04",
+  "models": [
+    {
+      "name": "seed42_centralized",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed42/centralized/model",
+      "manifest_sha256": "1e1a0c07f72bfde7af2ca6ece7cd4dd4e4b1319472702dba6816edf6d3b77423",
+      "baselines_manifest_sha256": "41121eb7ea3ec8ab7dd0a4969439f3bfa2d1d2a2ccc99d1177877db2aac92f53"
+    },
+    {
+      "name": "seed42_iid",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed42/iid/model",
+      "manifest_sha256": "dad581c8563a0d93e32e2fb3d3d71a646e7f7f24876911a491b15bd982fedd37",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed42_non_iid_05",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed42/non_iid_05/model",
+      "manifest_sha256": "5a628a314ffee81f546dbf3fded8497a6940b0d655e7967e5cce6a1f4e070905",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed42_non_iid_01",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed42/non_iid_01/model",
+      "manifest_sha256": "ba712db4844861b70c3b1f456d3186baf6cbc9f9382b376bc4c99a2517795645",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed42_source",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed42/source/model",
+      "manifest_sha256": "7acead6a51a29ec3cec0acb01f4ccd6448a9bef769ef2d4d6bd1699f7481f1cf",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed52_centralized",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed52/centralized/model",
+      "manifest_sha256": "84cfe2e6d87469ed5a80f82631502430804036942d9a5097f7d8bbd3aff91d0f",
+      "baselines_manifest_sha256": "65877a05d8fb24e50d677b907b7b74fd67704604f7ef82385082fd17e9e4e6de"
+    },
+    {
+      "name": "seed52_iid",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed52/iid/model",
+      "manifest_sha256": "54e15059a1d104232cabcaa1ccf8d6edf9f8ea85be9f321f7f1caa78233f41d3",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed52_non_iid_05",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed52/non_iid_05/model",
+      "manifest_sha256": "ca4caf8a7699e33c8f59145f5a1a4fbdba90b6d7a3e9f55e48c8a8bf29c8c9b6",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed52_non_iid_01",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed52/non_iid_01/model",
+      "manifest_sha256": "3de8f0ff3bbac7a96b9fa2d73da0767475a8d9f4a8b4c9c442f500519a0801e5",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed52_source",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed52/source/model",
+      "manifest_sha256": "d7255f867e7ee7a4e63862e26c6498441a427f3b4ffb2ff1d3c229c2e42814e7",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed62_centralized",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed62/centralized/model",
+      "manifest_sha256": "f163c820d1a7acdd8815e9230de13d08c59964162f8897628b3b23bde37c0517",
+      "baselines_manifest_sha256": "ceb20d6a0c5a508a140662b48be3fedf44c42b1236be170ac94a2c1b8d189910"
+    },
+    {
+      "name": "seed62_iid",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed62/iid/model",
+      "manifest_sha256": "80908374858acb2f8929aca38a03cf8942581541dd32a33e60429b0383678ccf",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed62_non_iid_05",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed62/non_iid_05/model",
+      "manifest_sha256": "6ee4240361fd2e86ae143d7d6a0910dceda33ad7d073262d4142cb7414ffb961",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed62_non_iid_01",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed62/non_iid_01/model",
+      "manifest_sha256": "03fd2126818404c964c47df0b15487585ba4a28c69a187174cbf61349b7228d0",
+      "baselines_manifest_sha256": null
+    },
+    {
+      "name": "seed62_source",
+      "path": "/content/drive/MyDrive/FYP/four_class/four_class_v1/seed62/source/model",
+      "manifest_sha256": "935d40b5a2e774fa304b138f73cdf75ca5542b799a44da1b65ae2d3da8ce328a",
+      "baselines_manifest_sha256": null
+    }
+  ],
+  "policy": "Fixed models across all seeds/scenarios; final test once; no selection from test"
+}

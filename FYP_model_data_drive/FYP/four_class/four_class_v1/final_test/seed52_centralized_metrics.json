@@ -1,0 +1,489 @@
+{
+  "model_name": "cbc_multiclass",
+  "version": "v2-four-class-seed52-3641aa3fbb72",
+  "features": [
+    "WBC",
+    "RBC",
+    "HGB",
+    "HCT",
+    "MCV",
+    "MCH",
+    "MCHC",
+    "RDW",
+    "PLT",
+    "NEUTp"
+  ],
+  "classes": [
+    "healthy",
+    "anemia",
+    "thalassemia",
+    "leukemia"
+  ],
+  "data_sha256": "ec5dba6d3a72ae479bac9856ed368128565596fa7353e733531b0c11ee29ff04",
+  "split": "test",
+  "metrics": {
+    "accuracy": 0.89375,
+    "macro_f1": 0.8936907940732763,
+    "balanced_accuracy": 0.89375,
+    "per_class_recall": {
+      "healthy": 0.9416666666666667,
+      "anemia": 0.8666666666666667,
+      "thalassemia": 0.9,
+      "leukemia": 0.8666666666666667
+    },
+    "per_class": {
+      "healthy": {
+        "recall": 0.9416666666666667,
+        "precision": 0.9112903225806451,
+        "f1": 0.9262295081967213,
+        "support": 120
+      },
+      "anemia": {
+        "recall": 0.8666666666666667,
+        "precision": 0.8524590163934426,
+        "f1": 0.859504132231405,
+        "support": 120
+      },
+      "thalassemia": {
+        "recall": 0.9,
+        "precision": 0.9230769230769231,
+        "f1": 0.9113924050632911,
+        "support": 120
+      },
+      "leukemia": {
+        "recall": 0.8666666666666667,
+        "precision": 0.8888888888888888,
+        "f1": 0.8776371308016878,
+        "support": 120
+      }
+    },
+    "confusion_matrix": [
+      [
+        113,
+        2,
+        1,
+        4
+      ],
+      [
+        2,
+        104,
+        7,
+        7
+      ],
+      [
+        7,
+        3,
+        108,
+        2
+      ],
+      [
+        2,
+        13,
+        1,
+        104
+      ]
+    ],
+    "sick_called_healthy": 11,
+    "log_loss": 0.30350752350428023,
+    "ece_15_bins": 0.03219638045145796,
+    "subtypes": {
+      "alpha_carrier": {
+        "recall": 0.7857142857142857,
+        "support": 14
+      },
+      "alpha_thal_1": {
+        "recall": 1.0,
+        "support": 36
+      },
+      "alpha_thal_2": {
+        "recall": 0.7037037037037037,
+        "support": 27
+      },
+      "beta_trait": {
+        "recall": 0.975609756097561,
+        "support": 41
+      },
+      "hbh_disease": {
+        "recall": 1.0,
+        "support": 2
+      },
+      "healthy": {
+        "recall": 0.9714285714285714,
+        "support": 35
+      },
+      "iron_deficiency_anemia": {
+        "recall": 0.8846153846153846,
+        "support": 26
+      },
+      "leukemia": {
+        "recall": 0.8632478632478633,
+        "support": 117
+      },
+      "leukemia_with_thrombocytopenia": {
+        "recall": 1.0,
+        "support": 3
+      },
+      "low_hb_hospital": {
+        "recall": 0.8648648648648649,
+        "support": 37
+      },
+      "macrocytic_anemia": {
+        "recall": 0.3333333333333333,
+        "support": 3
+      },
+      "normal": {
+        "recall": 0.76,
+        "support": 25
+      },
+      "normal_range_hospital": {
+        "recall": 1.0,
+        "support": 60
+      },
+      "normocytic_hypochromic_anemia": {
+        "recall": 0.896551724137931,
+        "support": 29
+      },
+      "normocytic_normochromic_anemia": {
+        "recall": 0.9090909090909091,
+        "support": 22
+      },
+      "other_microcytic_anemia": {
+        "recall": 0.6666666666666666,
+        "support": 3
+      }
+    },
+    "sources": {
+      "kaggle_anemia": {
+        "accuracy": 0.8888888888888888,
+        "macro_f1": 0.6112263184843829,
+        "balanced_accuracy": 0.862966150315548,
+        "per_class_recall": {
+          "healthy": 0.9714285714285714,
+          "anemia": 0.8674698795180723,
+          "thalassemia": 0.0,
+          "leukemia": 0.75
+        },
+        "per_class": {
+          "healthy": {
+            "recall": 0.9714285714285714,
+            "precision": 0.918918918918919,
+            "f1": 0.9444444444444444,
+            "support": 35
+          },
+          "anemia": {
+            "recall": 0.8674698795180723,
+            "precision": 1.0,
+            "f1": 0.9290322580645162,
+            "support": 83
+          },
+          "thalassemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          },
+          "leukemia": {
+            "recall": 0.75,
+            "precision": 0.46153846153846156,
+            "f1": 0.5714285714285714,
+            "support": 8
+          }
+        },
+        "confusion_matrix": [
+          [
+            34,
+            0,
+            0,
+            1
+          ],
+          [
+            1,
+            72,
+            4,
+            6
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            2,
+            0,
+            0,
+            6
+          ]
+        ],
+        "sick_called_healthy": 3,
+        "log_loss": 0.39430045472016745,
+        "ece_15_bins": 0.07635451091032448
+      },
+      "letslive": {
+        "accuracy": 0.7857142857142857,
+        "macro_f1": 0.22,
+        "balanced_accuracy": 0.7857142857142857,
+        "per_class_recall": {
+          "healthy": 0.0,
+          "anemia": 0.0,
+          "thalassemia": 0.7857142857142857,
+          "leukemia": 0.0
+        },
+        "per_class": {
+          "healthy": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          },
+          "anemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          },
+          "thalassemia": {
+            "recall": 0.7857142857142857,
+            "precision": 1.0,
+            "f1": 0.88,
+            "support": 14
+          },
+          "leukemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          }
+        },
+        "confusion_matrix": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            3,
+            0,
+            11,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "sick_called_healthy": 3,
+        "log_loss": 0.3164077436675689,
+        "ece_15_bins": 0.16378161929237103
+      },
+      "leukoalert": {
+        "accuracy": 0.9090909090909091,
+        "macro_f1": 0.6752833236686917,
+        "balanced_accuracy": 0.9132882882882883,
+        "per_class_recall": {
+          "healthy": 1.0,
+          "anemia": 0.8648648648648649,
+          "thalassemia": 0.0,
+          "leukemia": 0.875
+        },
+        "per_class": {
+          "healthy": {
+            "recall": 1.0,
+            "precision": 0.9836065573770492,
+            "f1": 0.9917355371900827,
+            "support": 60
+          },
+          "anemia": {
+            "recall": 0.8648648648648649,
+            "precision": 0.7111111111111111,
+            "f1": 0.7804878048780488,
+            "support": 37
+          },
+          "thalassemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          },
+          "leukemia": {
+            "recall": 0.875,
+            "precision": 0.98989898989899,
+            "f1": 0.9289099526066351,
+            "support": 112
+          }
+        },
+        "confusion_matrix": [
+          [
+            60,
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            32,
+            3,
+            1
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            13,
+            1,
+            98
+          ]
+        ],
+        "sick_called_healthy": 1,
+        "log_loss": 0.23133744503788026,
+        "ece_15_bins": 0.045062232726111456
+      },
+      "mendeley_thal": {
+        "accuracy": 0.975609756097561,
+        "macro_f1": 0.24691358024691357,
+        "balanced_accuracy": 0.975609756097561,
+        "per_class_recall": {
+          "healthy": 0.0,
+          "anemia": 0.0,
+          "thalassemia": 0.975609756097561,
+          "leukemia": 0.0
+        },
+        "per_class": {
+          "healthy": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          },
+          "anemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          },
+          "thalassemia": {
+            "recall": 0.975609756097561,
+            "precision": 1.0,
+            "f1": 0.9876543209876543,
+            "support": 41
+          },
+          "leukemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          }
+        },
+        "confusion_matrix": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            40,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "sick_called_healthy": 0,
+        "log_loss": 0.11090254795906909,
+        "ece_15_bins": 0.06826893565945477
+      },
+      "plenoi": {
+        "accuracy": 0.8444444444444444,
+        "macro_f1": 0.4296239837398374,
+        "balanced_accuracy": 0.8184615384615385,
+        "per_class_recall": {
+          "healthy": 0.76,
+          "anemia": 0.0,
+          "thalassemia": 0.8769230769230769,
+          "leukemia": 0.0
+        },
+        "per_class": {
+          "healthy": {
+            "recall": 0.76,
+            "precision": 0.8260869565217391,
+            "f1": 0.7916666666666666,
+            "support": 25
+          },
+          "anemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          },
+          "thalassemia": {
+            "recall": 0.8769230769230769,
+            "precision": 0.9827586206896551,
+            "f1": 0.926829268292683,
+            "support": 65
+          },
+          "leukemia": {
+            "recall": 0.0,
+            "precision": 0.0,
+            "f1": 0.0,
+            "support": 0
+          }
+        },
+        "confusion_matrix": [
+          [
+            19,
+            2,
+            1,
+            3
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            4,
+            2,
+            57,
+            2
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "sick_called_healthy": 4,
+        "log_loss": 0.42972794551920734,
+        "ece_15_bins": 0.05687440481311109
+      }
+    }
+  },
+  "screening_only": true
+}
