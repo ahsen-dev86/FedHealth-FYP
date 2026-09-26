@@ -7,7 +7,7 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 -Setup     # migrate, register model, import runs
   powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 -Start     # inference :8000 + backend :4000
-  powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 -Start -Frontend   # + Vite :5173
+  powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 -Start -Frontend   # + Vite :5173 (real API; add -Mock for the demo mock)
   powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 -Status
   powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 -Stop
 
@@ -15,7 +15,7 @@
   "Module 1-2 Merged Backend\.env" and, for -Setup, the git-ignored root .env
   with PG_SUPERUSER_PASSWORD. Logs and PIDs go to run-results\ (git-ignored).
 #>
-param([switch]$Setup, [switch]$Start, [switch]$Frontend, [switch]$Status, [switch]$Stop)
+param([switch]$Setup, [switch]$Start, [switch]$Frontend, [switch]$Mock, [switch]$Status, [switch]$Stop)
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent $PSScriptRoot
@@ -93,11 +93,14 @@ if ($Start) {
     Write-Host "backend :4000 (pid $($p.Id))"
   }
   if ($Frontend) {
+    # Real client against the backend, even if frontend\.env.local sets VITE_USE_MOCK=true
+    # (process environment overrides Vite .env files). Use -Mock for the demo mock instead.
+    $env:VITE_USE_MOCK = $(if ($Mock) { 'true' } else { 'false' })
     $p = Start-Process -PassThru -WindowStyle Hidden -FilePath npm.cmd -ArgumentList 'run', 'dev' `
       -WorkingDirectory (Join-Path $Root 'frontend') -RedirectStandardOutput (Join-Path $Logs 'frontend.log') `
       -RedirectStandardError (Join-Path $Logs 'frontend.err.log')
     $pids.frontend = $p.Id
-    Write-Host "frontend :5173 (pid $($p.Id)); Vite proxies /api to :4000"
+    Write-Host "frontend :5173 (pid $($p.Id)); VITE_USE_MOCK=$env:VITE_USE_MOCK; Vite proxies /api to :4000"
   }
   if ($pids.Count) { $pids | ConvertTo-Json | Set-Content -Encoding utf8 $PidFile }
 }

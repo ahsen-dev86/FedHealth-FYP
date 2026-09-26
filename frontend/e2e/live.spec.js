@@ -26,6 +26,7 @@ async function registerDoctorViaUi(page, email) {
   await page.getByRole('button', { name: 'Create account' }).click();
   await completeMfaSetup(page);
   await expect(page.getByRole('heading', { name: 'Doctor Portal' })).toBeVisible();
+  await expect(page.getByTestId('mock-banner'), 'live run must not use the mock client').toHaveCount(0);
 }
 
 /** NIH officials are created through the API (the UI flow is the same as the doctor's). */
@@ -48,6 +49,9 @@ test.describe.serial('live stack', () => {
   test.beforeAll(async ({ browser }, testInfo) => {
     baseURL = testInfo.project.use.baseURL;
     page = await browser.newPage({ baseURL });
+    // Warm up: Vite optimizes dependencies on the first load and may reload once.
+    await page.goto('/login');
+    await page.waitForLoadState('networkidle');
   });
   test.afterAll(async () => { await page.close(); });
 

@@ -27,9 +27,13 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
+        // Strip /api like Module 9's nginx (proxy_pass http://backend:4000/): the
+        // backend mounts /auth, /predict, ... at its root. Without the rewrite every
+        // dev request reached the backend as /api/... and got 404.
         '/api': {
-          target: 'http://localhost:4000',
+          target: 'http://127.0.0.1:4000',
           changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/api/, ''),
         },
       },
     },
