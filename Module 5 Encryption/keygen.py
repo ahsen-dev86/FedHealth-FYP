@@ -1,11 +1,11 @@
-# fl/keygen.py
+# Module 5 Encryption/keygen.py
 # ---------------------------------------------------------------------------
 # Generate the Paillier keypair for the federation and write two files:
 #   * public.json  -> given to the SERVER and all labs (aggregate + encrypt)
 #   * private.json -> given ONLY to the labs (decrypt). NEVER deploy this to the
 #                     aggregation server — that is what keeps the server blind.
 #
-#   python fl/keygen.py --out fl/keys --bits 1024
+#   python Module 5 Encryption/keygen.py --out fl/keys --bits 1024
 #
 # Key size: 2048+ bits is recommended for real security. 1024 is offered for a
 # fast demo (keygen + per-weight encryption get much slower at 2048). Flagged so
@@ -15,15 +15,13 @@ import argparse
 import os
 import sys
 
-_ML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ml"))
-if _ML not in sys.path:
-    sys.path.insert(0, _ML)
-from fedhealth_ml import paillier_utils as pu  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paillier_utils as pu  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser(description="Generate FedHealth Paillier keys")
-    ap.add_argument("--out", default="fl/keys")
+    ap.add_argument("--out", default="keys")
     ap.add_argument("--bits", type=int, default=2048,
                     help="Paillier modulus bits (1024 = fast demo, 2048+ = secure)")
     args = ap.parse_args()

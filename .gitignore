@@ -17,3 +17,8 @@ certs/
 venv/
 node_modules/
 .DS_Store
+
+# Module 5 Paillier key files (private.json must never be committed)
+keys/
+**/private.json
+*token*.txt

@@ -1,105 +1,57 @@
-> Four-class migration status: this legacy encrypted demo is not compatible with
-> the new Module 3/4 artifact contract yet. Do not use it to claim encrypted
-> four-class training. Port its client/data flow and compare encrypted and
-> plaintext aggregation before enabling it. The cryptographic source is retained.
+# Module 5 — Paillier-encrypted ANN federation (four-class)
 
-# FedHealth — Federated Learning Module (Module 4)
+Encrypted counterpart of Module 4. Labs decrypt the previous aggregate, train
+with the unchanged Module 4 `LabClient`, encrypt the update with the **public**
+key and send ciphertext. The aggregator holds only the public key: it computes
+`E(sum n_i * w_i)` with ciphertext addition and ciphertext-times-integer, and
+never decrypts or divides. Labs divide by `N` after decrypting.
 
-The Lab Tier (Flower clients), the Server Tier (blind aggregator), and FedAvg.
-Federates the **Model A ANN** from Module 3; the XGBoost head stays local per
-lab (trees aren't weight-averageable). Consumes the Module 3 preprocessor so
-every lab produces identical feature vectors.
+Only the ANN weights (2,916 per update) are encrypted. XGBoost stays local /
+central-reference exactly as in Module 4.
 
-## Layout
-```
-fl/
-├── common/
-│   ├── partition.py   # split one dataset into N lab shards (iid / non_iid)
-│   └── task.py        # shared model build, preprocessor, partition loading, metrics
-├── client/
-│   ├── lims_wrapper.py  # mock LIMS connector + normalization (6.3.1)
-│   ├── client.py        # Flower NumPyClient: local training engine (6.3.2)
-│   └── Dockerfile
-├── server/
-│   ├── strategy.py    # FedHealthStrategy: explicit FedAvg with Paillier hooks (6.4.2)
-│   ├── server.py      # Flower server, optional TLS (6.4)
-│   └── Dockerfile
-├── run_simulation.py  # one-command in-process federation (no Docker)
-├── scripts/gen_certs.sh
-└── requirements.txt
+## Files
+
+- `paillier_utils.py` — keygen, (de)serialization, encrypt/decrypt, homomorphic weighted sum.
+- `encrypted_federation.py` — `BlindAggregator`, `EncryptedLab`, `run(...)`, plaintext reference and comparison.
+- `keygen.py` — writes `public.json` (aggregator + labs) and `private.json` (key holders only; git-ignored).
+- Legacy nine-class client/strategy/simulation are in `archive/pre_four_class/module5_encryption/`.
+
+## Run
+
+```sh
+pip install -r "Module 5 Encryption/requirements.txt"      # phe (+ optional gmpy2, ~6x faster)
+python "Module 5 Encryption/encrypted_federation.py" --model <centralized model dir> \
+    --out <new output dir> --rounds 20 --bits 2048 --compare-plaintext
 ```
 
-## Run it — simulation (easiest, no Docker)
-```bash
-pip install -r fl/requirements.txt
-python fl/run_simulation.py \
-  --csv anemia_diagnosed_cbc_data_v4.csv --labs 4 --rounds 5 --mode non_iid
-```
-This partitions the data into 4 labs, trains them in-process, and prints the
-global model's weighted macro-F1 per round.
+`--model` is the Module 3 centralized bundle (e.g. `four_class_v1/seed42/centralized/model`),
+`--out` must not exist. The run selects a round by global validation exactly as
+Module 4 does; the test split is never used. `--compare-plaintext` also runs plaintext
+FedAvg with the same labs/split and writes `equivalence_report.json`.
 
-## Run it — real client/server processes (what Docker Compose uses in Module 9)
-```bash
-# 1. Partition into shard files
-python fl/common/partition.py --csv anemia_diagnosed_cbc_data_v4.csv \
-  --out fl/client/data --labs 4 --mode non_iid
-# 2. (optional) TLS certs
-bash fl/scripts/gen_certs.sh
-# 3. Start the server
-FL_LABS=4 FL_ROUNDS=5 python fl/server/server.py
-# 4. Start each lab (new terminal each), e.g. lab 0:
-LAB_ID=lab-00 SHARD_CSV=fl/client/data/lab_00.csv python fl/client/client.py
-```
+## What the aggregator checks (without seeing plaintext)
 
-## Privacy model — where this module stands
-- **Raw data never leaves the lab.** The mock LIMS reads the shard, normalizes,
-  trains locally; only ANN weights + an example count are returned. ✔ (holds now)
-- **Server never sees plaintext weights.** ✘ **not yet** — this module does
-  plaintext FedAvg. Module 5 (Paillier) makes the server blind; `strategy.py`
-  already marks the two "PAILLIER HOOK" points where encrypted aggregation slots
-  in. This is expected: Module 4 builds the FL scaffolding, Module 5 adds the
-  crypto.
+Lab ID allow-list and duplicates, row counts, shared-preprocessor hash, training
+settings, ciphertext layout/size, and that all labs report the **same** received-global
+hash. It cannot check that weights are finite or plausible, so **it cannot detect a
+poisoned but well-formed update** (plaintext Module 4 can). Labs check finiteness after
+decrypting.
 
-## Module 5 — Paillier encryption (the server becomes blind)
-The encrypted variant lives alongside the plaintext baseline so you can demo both:
+## Cost
 
-```bash
-pip install phe            # already in fl/requirements.txt
-# one-command encrypted federation (server never decrypts):
-python fl/run_simulation_paillier.py --csv anemia_diagnosed_cbc_data_v4.csv \
-    --labs 3 --rounds 3 --bits 1024
-```
-For the real client/server split, generate keys first — the **private key goes to
-labs only, never the server**:
-```bash
-python fl/keygen.py --out fl/keys --bits 2048    # writes public.json + private.json
-```
+Per lab per round, 2,916 encryptions plus 2,916 decryptions, plus the aggregator's
+serialization/randomization of the sum. Measured here with gmpy2: about 10 s (1024-bit)
+or 49 s (2048-bit) per lab-round. Without gmpy2 it is roughly 6x slower.
 
-How it stays blind: labs encrypt weight updates with the **public** key; the
-server computes `E(Σ nᵢ·wᵢ)` with homomorphic add + scalar-multiply (public-key
-ops) and **never decrypts or divides**; the labs (holding the **private** key)
-decrypt and divide by `N`. Verified: this reproduces plaintext FedAvg to ~1e-7.
+## Honest limits
 
-Files: `ml/fedhealth_ml/paillier_utils.py` (crypto core), `fl/common/crypto.py`
-(Parameters bridge), `fl/server/strategy_paillier.py` (blind aggregator),
-`fl/client/client_paillier.py` (decrypt→train→encrypt), `fl/keygen.py`.
-
-## Decisions / simplifications (for defense)
-- **Shared preprocessor as an agreed normalization standard.** All labs use one
-  preprocessor (from Module 3) so feature vectors are comparable — it holds only
-  summary statistics, not patient data, so raw data still never leaves. Fully
-  federated normalization is a future enhancement.
-- **Paillier key custody & threshold.** Labs share one keypair; the server holds
-  only the public key. A production system would use *threshold* Paillier so no
-  single lab holds the full private key either — documented next step, out of FYP
-  scope.
-- **Key size 1024 for the demo, 2048+ for security.** Paillier encrypts every
-  weight (~3.3k per round for this ANN), so 2048-bit is slow; the size is a CLI
-  flag with the trade-off noted.
-- **TLS, not full mTLS.** Flower's classic API gives server-authenticated TLS
-  (clients verify the server via the CA). True mutual TLS (server verifying each
-  lab's client certificate) isn't exposed simply there; labs instead present an
-  `fl_client_id`. Client-cert mTLS is a deployment hardening step — flagged
-  because the scope says "mTLS".
-- **Flower pinned to `>=1.8,<1.13`** for the stable classic API used here.
-- **Only the ANN federates; XGBoost is local** (per the Module 3 architecture).
+- All labs share **one** keypair, and the simulation adds a key-authority role that
+  decrypts each aggregate for validation. Threshold Paillier (no single key holder) is not implemented.
+- Transport is in-process serialized bytes. No network TLS/mTLS is exercised here;
+  the Module 4 TLS check covers the plaintext transport only.
+- Encryption protects the aggregator's view, not against a curious lab, and provides no
+  differential privacy: the decrypted global model still reveals information about the training data.
+- Weights are Paillier fixed-point encoded. In the recorded 2048-bit run the decrypted
+  aggregates were identical to plaintext FedAvg after the float32 cast; the tests only
+  require agreement within 1e-4, so exact equality is an observation, not a guarantee.
+- No performance or privacy improvement is claimed; this module shows the aggregator can be blind.

@@ -71,3 +71,31 @@ The automated heavy workflow is now manual-only. Its initial GitHub runs failed
 at dependency installation, before training; they are not a Linux/Docker pass.
 Requirements includes were simplified to paths without spaces. The final code
 and notebook checks remain separate from user-run Colab acceptance.
+
+## Module 5 encrypted aggregation (added after the Colab runs)
+
+- New `Module 5 Encryption/encrypted_federation.py` runs the Module 4 lab clients with
+  Paillier-encrypted ANN updates and a public-key-only `BlindAggregator`. Legacy nine-class
+  Module 5 code is archived in `archive/pre_four_class/module5_encryption/`.
+- `tests/test_encryption.py`: 14 tests pass (homomorphic sum equals plaintext FedAvg, the
+  aggregator holds no private key, ciphertext randomization, nine rejection cases, and a real
+  2-round encrypted-vs-plaintext federation at 1024-bit keys with weights within 1e-4).
+- Equivalence run at **2048-bit keys**, 3 labs, 3 rounds, on a quick throwaway centralized model
+  (5 epochs, 20 trees, so accuracy is not meaningful): maximum absolute difference between
+  decrypted-encrypted and plaintext aggregated weights was **0.0** in every round, and validation
+  log loss and macro-F1 were identical. Runtime 626 s for 3 rounds (about 70 s per lab-round with
+  gmpy2). The plaintext reference uses Module 4's `aggregate_updates` and `LabClient`
+  (the Flower wrapper was not installed in this environment, so that path was not the comparator).
+- Full local suite: 47 passed, 1 failed. The failure is
+  `test_three_labs_two_rounds_real_fedavg`, which imports `flwr`; `flwr` is not installed in this
+  Python environment (requirements-test.txt pins it). Not caused by these changes.
+- Limits: one shared keypair plus a key-authority role that decrypts each aggregate for validation;
+  no threshold Paillier; in-process serialized transport (no TLS exercised for the encrypted path);
+  a blind aggregator cannot detect a poisoned but well-formed update; no privacy proof is claimed.
+- Not run: a 20-round encrypted run on the real Colab seed-42 model.
+
+## Unit normalization fix
+
+Report-style unit strings `/mm3`, `mil/mm3` (and `x10^3/uL`, `x10^6/uL`, `gm/dL`) were rejected.
+They are now accepted with explicit conversion; units are still never inferred from magnitude, and
+unsupported units such as mmol/L are rejected. Covered by `test_report_style_unit_strings_are_accepted`.

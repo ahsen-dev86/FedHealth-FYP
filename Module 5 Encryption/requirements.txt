@@ -1,13 +1,2 @@
-# fl/requirements.txt
-# Pinned to a Flower range where the classic start_server/start_client/
-# start_simulation API used here is stable. If you upgrade past this, migrate to
-# the ServerApp/ClientApp + run_simulation API.
-flwr[simulation]>=1.8,<1.13
-tensorflow>=2.15
-xgboost>=2.0
-scikit-learn>=1.3
-pandas>=2.0
-numpy>=1.26
-joblib>=1.3
-scipy>=1.11
-phe>=1.5              # Paillier homomorphic encryption (Module 5)
+phe==1.5.0
+gmpy2==2.3.1  # optional; ~6x faster Paillier
