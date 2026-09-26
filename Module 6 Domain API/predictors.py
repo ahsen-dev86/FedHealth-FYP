@@ -1,4 +1,5 @@
 """Verified four-class inference. Missing artifacts are explicitly unavailable."""
+import math
 import os
 from pathlib import Path
 import sys
@@ -6,6 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fedhealth_ml import schema
 from fedhealth_ml.preprocess import normalize_units
 from fedhealth_ml.artifacts import load_bundle
+
+RISK_RULE = "leukemia score >= risk_threshold (configurable demo flag, not a clinical decision threshold)"
 
 
 class UnavailablePredictor:
@@ -30,10 +33,17 @@ class HybridPredictor:
         p = self.hybrid.predict_proba(self.prep.transform(canonical))[0]
         scores = {c: float(v) for c, v in zip(schema.CLASSES, p)}
         ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+        missing = [f for f in schema.FEATURES if math.isnan(canonical[f])]
         return {"model_name": self.name, "model_version": self.version, "mode": self.mode,
                 "classes": schema.CLASSES, "features": schema.FEATURES,
                 "scores": scores, "ranked": ranked, "top_condition": ranked[0][0],
                 "top_confidence": ranked[0][1], "risk_flag": scores["leukemia"] >= self.threshold,
+                "risk_threshold": self.threshold, "risk_rule": RISK_RULE,
+                # Values the model actually scored, in canonical units; missing ones were
+                # filled with training medians by the fitted preprocessor.
+                "canonical_cbc": {f: (None if math.isnan(v) else v) for f, v in canonical.items()},
+                "canonical_units": schema.UNITS, "imputed_features": missing,
+                "calibration": {"method": "temperature_scaling", "temperature": self.meta["temperature"]},
                 "rule_flags": {}, "screening_only": True, "requires_doctor_confirmation": True,
                 "data_sha256": self.meta["data_sha256"], "selected_round": self.meta.get("selected_round"),
                 "reference_head": self.meta.get("reference_head", "centralized reference XGBoost")}
