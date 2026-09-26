@@ -5,8 +5,9 @@
 //     any high-risk cases). Best for discrete district aggregates + click detail.
 //   * heat    — a Leaflet.heat intensity layer for the classic heatmap look.
 //
-// The API returns aggregates only (district centroids, counts, avg confidence) —
-// never patient points — so this map cannot expose an individual.
+// The API returns aggregates only (district centroids rounded to 0.01°, counts,
+// avg top score) — never patient points — so this map cannot expose an individual.
+// Marker colour = condition; a thick red ring marks clusters with leukemia risk flags.
 //
 // NOTE: values from Postgres aggregates (count/avg) arrive as strings via
 // node-pg, so we coerce with Number() before plotting.
@@ -16,6 +17,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 import { conditionLabel } from '../lib/format';
+import { CLASS_HEX } from '../lib/contract';
 
 const PK_CENTER = [30.3753, 69.3451]; // Pakistan
 
@@ -58,17 +60,17 @@ export default function ClusterMap({ clusters, mode = 'markers' }) {
               <CircleMarker key={i} center={[p.lat, p.lng]}
                 radius={Math.max(6, Math.min(30, 5 + p.cases * 2))}
                 pathOptions={{
-                  color: p.highRisk > 0 ? '#B4453C' : '#0E7C7B',
-                  fillColor: p.highRisk > 0 ? '#B4453C' : '#0E7C7B',
-                  fillOpacity: 0.45, weight: 1.5,
+                  color: p.highRisk > 0 ? CLASS_HEX.leukemia : (CLASS_HEX[c.condition] || '#0E7C7B'),
+                  fillColor: CLASS_HEX[c.condition] || '#0E7C7B',
+                  fillOpacity: 0.45, weight: p.highRisk > 0 ? 3 : 1.5,
                 }}>
                 <Popup>
                   <strong>{c.district || 'Unknown district'}</strong>
                   {c.province ? `, ${c.province}` : ''}<br />
                   {conditionLabel(c.condition)}<br />
                   <span style={{ fontFamily: 'monospace' }}>
-                    {p.cases} case{p.cases === 1 ? '' : 's'} · {p.highRisk} high-risk<br />
-                    avg confidence {Math.round(p.conf * 100)}%
+                    {p.cases} screening result{p.cases === 1 ? '' : 's'} · {p.highRisk} risk flag{p.highRisk === 1 ? '' : 's'}<br />
+                    avg top score {Math.round(p.conf * 100)}%
                   </span>
                 </Popup>
               </CircleMarker>
