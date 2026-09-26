@@ -95,7 +95,8 @@ async function main() {
     const files = fs.readdirSync(INIT_DIR).filter((f) => /^\d{3}_.+\.sql$/.test(f)).sort();
     for (const file of files) {
       const sql = fs.readFileSync(path.join(INIT_DIR, file), 'utf8');
-      const sha = crypto.createHash('sha256').update(sql).digest('hex');
+      // Hash LF-normalized text so a CRLF checkout (core.autocrlf) is not an "edit".
+      const sha = crypto.createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex');
       if (applied.has(file)) {
         if (applied.get(file) !== sha) {
           fail(`${file} changed after it was applied; write a new migration or rebuild with --reset`);
