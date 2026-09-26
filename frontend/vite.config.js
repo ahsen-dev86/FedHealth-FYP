@@ -22,6 +22,9 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    // Separate dependency caches let two dev servers (e.g. the Playwright live and
+    // mock servers) run side by side without deleting each other's optimized files.
+    cacheDir: env.VITE_CACHE_DIR || 'node_modules/.vite',
     plugins: [react(), tailwindcss()],
     resolve: { alias: aliases },
     server: {

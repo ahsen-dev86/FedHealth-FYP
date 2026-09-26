@@ -24,13 +24,13 @@ export default defineConfig({
     {
       command: 'npm run dev -- --port 5175 --strictPort',
       url: 'http://localhost:5175',
-      env: { VITE_USE_MOCK: 'false' },
+      env: { VITE_USE_MOCK: 'false', VITE_CACHE_DIR: 'node_modules/.vite-e2e-live' },
       reuseExistingServer: false,
     },
     {
       command: 'npm run dev -- --port 5174 --strictPort',
       url: 'http://localhost:5174',
-      env: { VITE_USE_MOCK: 'true' },
+      env: { VITE_USE_MOCK: 'true', VITE_CACHE_DIR: 'node_modules/.vite-e2e-mock' },
       reuseExistingServer: false,
     },
   ],

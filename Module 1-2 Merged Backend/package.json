@@ -15,7 +15,11 @@
     "test": "npm run test:unit && npm run test:db",
     "test:unit": "node --test \"test/unit/*.test.js\"",
     "test:db": "node test/run_layer_tests.js",
-    "test:e2e": "node scripts/e2e-acceptance.js"
+    "test:e2e": "node scripts/e2e-acceptance.js",
+    "demo:users": "node scripts/create-demo-users.js",
+    "demo:code": "node scripts/demo-code.js",
+    "test:robustness": "node scripts/e2e-robustness.js",
+    "snapshot:model-health": "node scripts/export-model-health-snapshot.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -1,4 +1,9 @@
-# Integration handoff: Phase A done, Phase B next
+# Integration handoff (Phase A record)
+
+> **Phase B is complete** (frontend, Model Health, OCR engine, input hardening, tests). The
+> current state, contract matrix, problems/fixes and test results are in [INTEGRATION.md](INTEGRATION.md);
+> how to run it is in [RUN_GUIDE.md](RUN_GUIDE.md). This file keeps the Phase A record; its §4 API
+> notes are still accurate, its "open problems" list was worked through in Phase B.
 
 Branch `feat/integration` (from `main` at `c0ff0d6`), local commits only; nothing has been pushed
 or merged. Phase A covered the database, inference service, backend, model registry, FL history

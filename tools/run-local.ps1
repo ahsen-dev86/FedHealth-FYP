@@ -63,9 +63,18 @@ if ($Setup) {
   } finally { Pop-Location }
 }
 
+function Read-Pids {
+  $h = @{}
+  if (Test-Path $PidFile) {
+    $saved = Get-Content $PidFile | ConvertFrom-Json
+    foreach ($name in $saved.PSObject.Properties.Name) { $h[$name] = $saved.$name }
+  }
+  return $h
+}
+
 if ($Start) {
   if (-not (Test-Path $Python)) { throw 'Missing .venv; create it with Python 3.12 and requirements-test.txt.' }
-  $pids = @{}
+  $pids = Read-Pids
   if (Test-Url 'http://127.0.0.1:8000/health') {
     Write-Host 'inference already running on :8000'
   } else {
@@ -93,32 +102,47 @@ if ($Start) {
     Write-Host "backend :4000 (pid $($p.Id))"
   }
   if ($Frontend) {
-    # Real client against the backend, even if frontend\.env.local sets VITE_USE_MOCK=true
-    # (process environment overrides Vite .env files). Use -Mock for the demo mock instead.
-    $env:VITE_USE_MOCK = $(if ($Mock) { 'true' } else { 'false' })
-    $p = Start-Process -PassThru -WindowStyle Hidden -FilePath npm.cmd -ArgumentList 'run', 'dev' `
-      -WorkingDirectory (Join-Path $Root 'frontend') -RedirectStandardOutput (Join-Path $Logs 'frontend.log') `
-      -RedirectStandardError (Join-Path $Logs 'frontend.err.log')
-    $pids.frontend = $p.Id
-    Write-Host "frontend :5173 (pid $($p.Id)); VITE_USE_MOCK=$env:VITE_USE_MOCK; Vite proxies /api to :4000"
+    if (Test-Url 'http://localhost:5173') {
+      Write-Host 'frontend already running on :5173'
+    } else {
+      # Real client against the backend, even if frontend\.env.local sets VITE_USE_MOCK=true
+      # (process environment overrides Vite .env files). Use -Mock for the demo mock instead.
+      $env:VITE_USE_MOCK = $(if ($Mock) { 'true' } else { 'false' })
+      $p = Start-Process -PassThru -WindowStyle Hidden -FilePath npm.cmd -ArgumentList 'run', 'dev' `
+        -WorkingDirectory (Join-Path $Root 'frontend') -RedirectStandardOutput (Join-Path $Logs 'frontend.log') `
+        -RedirectStandardError (Join-Path $Logs 'frontend.err.log')
+      $pids.frontend = $p.Id
+      if (-not (Wait-Url 'http://localhost:5173' 60)) { throw 'frontend did not start; see run-results\logs\frontend*.log' }
+      Write-Host "frontend :5173 (pid $($p.Id)); VITE_USE_MOCK=$env:VITE_USE_MOCK; open http://localhost:5173"
+    }
   }
   if ($pids.Count) { $pids | ConvertTo-Json | Set-Content -Encoding utf8 $PidFile }
 }
 
 if ($Status -or $Start) {
-  foreach ($u in 'http://127.0.0.1:8000/health', 'http://127.0.0.1:4000/health', 'http://127.0.0.1:4000/health/inference') {
+  foreach ($u in 'http://127.0.0.1:8000/health', 'http://127.0.0.1:4000/health', 'http://127.0.0.1:4000/health/inference', 'http://localhost:5173') {
     Write-Host ("{0,-42} {1}" -f $u, $(if (Test-Url $u) { 'up' } else { 'down' }))
   }
 }
 
 if ($Stop) {
-  if (Test-Path $PidFile) {
-    $saved = Get-Content $PidFile | ConvertFrom-Json
-    foreach ($name in $saved.PSObject.Properties.Name) {
-      try { Stop-Process -Id $saved.$name -Force -ErrorAction Stop; Write-Host "stopped $name" } catch { Write-Host "$name not running" }
+  # Kill each started process with its children (npm -> vite, etc.).
+  $pids = Read-Pids
+  foreach ($name in $pids.Keys) {
+    & taskkill.exe /PID $pids[$name] /T /F 2>&1 | Out-Null
+    Write-Host "stopped $name"
+  }
+  if (Test-Path $PidFile) { Remove-Item $PidFile }
+  # Fallback: anything still listening on our ports that is node/python (e.g. PID file lost).
+  foreach ($port in 8000, 4000, 5173) {
+    $owners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+      Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($id in $owners) {
+      $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+      if ($proc -and $proc.ProcessName -match '^(node|python)') {
+        & taskkill.exe /PID $id /T /F 2>&1 | Out-Null
+        Write-Host "stopped $($proc.ProcessName) on :$port"
+      }
     }
-    Remove-Item $PidFile
-  } else {
-    Write-Host 'No PID file; nothing started by this script.'
   }
 }
