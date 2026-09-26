@@ -155,6 +155,112 @@
       "l/l": 100.0
     }
   },
+  "unit_options": {
+    "WBC": [
+      {
+        "value": "10^3/uL",
+        "label": "×10³/µL"
+      },
+      {
+        "value": "10^9/L",
+        "label": "×10⁹/L"
+      },
+      {
+        "value": "/mm3",
+        "label": "/mm³ (count)"
+      },
+      {
+        "value": "/uL",
+        "label": "/µL (count)"
+      }
+    ],
+    "RBC": [
+      {
+        "value": "10^6/uL",
+        "label": "×10⁶/µL"
+      },
+      {
+        "value": "mil/mm3",
+        "label": "million/mm³"
+      },
+      {
+        "value": "10^12/L",
+        "label": "×10¹²/L"
+      }
+    ],
+    "HGB": [
+      {
+        "value": "g/dL",
+        "label": "g/dL"
+      },
+      {
+        "value": "g/L",
+        "label": "g/L"
+      }
+    ],
+    "HCT": [
+      {
+        "value": "%",
+        "label": "%"
+      },
+      {
+        "value": "L/L",
+        "label": "L/L"
+      }
+    ],
+    "MCV": [
+      {
+        "value": "fL",
+        "label": "fL"
+      }
+    ],
+    "MCH": [
+      {
+        "value": "pg",
+        "label": "pg"
+      }
+    ],
+    "MCHC": [
+      {
+        "value": "g/dL",
+        "label": "g/dL"
+      },
+      {
+        "value": "g/L",
+        "label": "g/L"
+      }
+    ],
+    "RDW": [
+      {
+        "value": "%",
+        "label": "%"
+      }
+    ],
+    "PLT": [
+      {
+        "value": "10^3/uL",
+        "label": "×10³/µL"
+      },
+      {
+        "value": "10^9/L",
+        "label": "×10⁹/L"
+      },
+      {
+        "value": "/mm3",
+        "label": "/mm³ (count)"
+      },
+      {
+        "value": "/uL",
+        "label": "/µL (count)"
+      }
+    ],
+    "NEUTp": [
+      {
+        "value": "%",
+        "label": "%"
+      }
+    ]
+  },
   "unit_normalization": "strip spaces; lowercase; µ/μ->u; ³->^3; ⁶->^6; mm3->mm^3 (fedhealth_ml.preprocess._unit)",
   "not_model_inputs": [
     "sex",
