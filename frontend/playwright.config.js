@@ -1,19 +1,30 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Three projects, text assertions only (screenshots, video and traces are off):
+//   smoke — the app loads (real client, :5173)
+//   mock  — UI against the mock client (VITE_USE_MOCK=true, :5174, no backend)
+//   live  — UI against the running stack via the Vite /api proxy (:5173 -> :4000);
+//           skipped when the backend is not running (tools/run-local.ps1 -Start)
+const chrome = { ...devices['Desktop Chrome'], screenshot: 'off', video: 'off', trace: 'off' };
+
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
-  reporter: 'html',
-  use: {
-    baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
-  },
+  fullyParallel: false,
+  reporter: [['list']],
+  timeout: 90000,
+  use: { screenshot: 'off', video: 'off', trace: 'off' },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'smoke', testMatch: /smoke\.spec\.js/, use: { ...chrome, baseURL: 'http://localhost:5173' } },
+    { name: 'mock', testMatch: /mock\.spec\.js/, use: { ...chrome, baseURL: 'http://localhost:5174' } },
+    { name: 'live', testMatch: /live\.spec\.js/, use: { ...chrome, baseURL: 'http://localhost:5173' } },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    { command: 'npm run dev', url: 'http://localhost:5173', reuseExistingServer: !process.env.CI },
+    {
+      command: 'npm run dev -- --port 5174 --strictPort',
+      url: 'http://localhost:5174',
+      env: { VITE_USE_MOCK: 'true' },
+      reuseExistingServer: !process.env.CI,
+    },
+  ],
 });
