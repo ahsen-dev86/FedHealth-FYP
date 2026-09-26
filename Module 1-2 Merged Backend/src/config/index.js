@@ -17,6 +17,10 @@ if (isProd && JWT_SECRET === 'dev-insecure-secret-change-me') {
 module.exports = {
   isProd,
   port: parseInt(process.env.PORT || '4000', 10),
+  // Express 'trust proxy': 'loopback' (Vite dev proxy), a hop count, or a CIDR list.
+  trustProxy: /^\d+$/.test(process.env.TRUST_PROXY || '')
+    ? parseInt(process.env.TRUST_PROXY, 10)
+    : (process.env.TRUST_PROXY || 'loopback'),
 
   jwt: {
     secret: JWT_SECRET,
@@ -38,5 +42,19 @@ module.exports = {
   lockout: {
     threshold: parseInt(process.env.LOGIN_LOCK_THRESHOLD || '5', 10),
     minutes: parseInt(process.env.LOGIN_LOCK_MINUTES || '15', 10),
+  },
+
+  // Module 6 Flask inference service (Module 6 Domain API/app.py).
+  inference: {
+    url: (process.env.INFERENCE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, ''),
+    timeoutMs: parseInt(process.env.INFERENCE_TIMEOUT_MS || '20000', 10),
+    apiKey: process.env.INFERENCE_API_KEY || '',
+  },
+
+  // NIH outbreak-cluster alerting: N cases of one condition in one district
+  // within the window raise one (de-duplicated per ISO week) cluster alert.
+  alerting: {
+    clusterWindowDays: parseInt(process.env.ALERT_CLUSTER_WINDOW_DAYS || '7', 10),
+    clusterMinCases: parseInt(process.env.ALERT_CLUSTER_MIN_CASES || '3', 10),
   },
 };

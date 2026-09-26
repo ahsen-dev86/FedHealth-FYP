@@ -17,9 +17,18 @@ const AuditLogs = require('../models/auditLogs');
  */
 function auditAction(action, resourceFn = () => ({})) {
   return (req, res, next) => {
+    // Express resets req.params when an error (e.g. a 403) leaves the route,
+    // before 'finish' fires; keep this route's params so the entry names its resource.
+    const routeParams = { ...req.params };
     res.on('finish', () => {
       let resource = {};
-      try { resource = resourceFn(req, res) || {}; } catch { /* ignore */ }
+      const current = req.params;
+      try {
+        req.params = { ...routeParams, ...current };
+        resource = resourceFn(req, res) || {};
+      } catch { /* ignore */ } finally {
+        req.params = current;
+      }
       const { type = null, id = null } = resource;
 
       AuditLogs.append({
