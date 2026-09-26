@@ -1,0 +1,170 @@
+{
+  "generated_by": "tools/export_contract.py",
+  "schema_version": "cbc-four-class-v1",
+  "model_name": "cbc_multiclass",
+  "features": [
+    "WBC",
+    "RBC",
+    "HGB",
+    "HCT",
+    "MCV",
+    "MCH",
+    "MCHC",
+    "RDW",
+    "PLT",
+    "NEUTp"
+  ],
+  "classes": [
+    "healthy",
+    "anemia",
+    "thalassemia",
+    "leukemia"
+  ],
+  "class_labels": {
+    "healthy": "Healthy",
+    "anemia": "Anemia",
+    "thalassemia": "Thalassemia",
+    "leukemia": "Leukemia"
+  },
+  "feature_labels": {
+    "WBC": "White blood cells (WBC / TLC)",
+    "RBC": "Red blood cells (RBC)",
+    "HGB": "Haemoglobin (Hb)",
+    "HCT": "Haematocrit (HCT / PCV)",
+    "MCV": "Mean corpuscular volume (MCV)",
+    "MCH": "Mean corpuscular haemoglobin (MCH)",
+    "MCHC": "Mean corpuscular haemoglobin concentration (MCHC)",
+    "RDW": "Red cell distribution width (RDW-CV)",
+    "PLT": "Platelets (PLT)",
+    "NEUTp": "Neutrophils (%)"
+  },
+  "canonical_units": {
+    "WBC": "10^3/uL",
+    "RBC": "10^6/uL",
+    "HGB": "g/dL",
+    "HCT": "%",
+    "MCV": "fL",
+    "MCH": "pg",
+    "MCHC": "g/dL",
+    "RDW": "%",
+    "PLT": "10^3/uL",
+    "NEUTp": "%"
+  },
+  "plausible_ranges": {
+    "WBC": [
+      0.5,
+      200.0
+    ],
+    "RBC": [
+      1.0,
+      8.0
+    ],
+    "HGB": [
+      2.0,
+      24.0
+    ],
+    "HCT": [
+      5.0,
+      70.0
+    ],
+    "MCV": [
+      40.0,
+      140.0
+    ],
+    "MCH": [
+      10.0,
+      50.0
+    ],
+    "MCHC": [
+      20.0,
+      40.0
+    ],
+    "RDW": [
+      9.0,
+      40.0
+    ],
+    "PLT": [
+      1.0,
+      1500.0
+    ],
+    "NEUTp": [
+      0.0,
+      100.0
+    ]
+  },
+  "accepted_units": {
+    "WBC": {
+      "/mm^3": 0.001,
+      "/ul": 0.001,
+      "10^3/mm^3": 1.0,
+      "10^3/ul": 1.0,
+      "10^9/l": 1.0,
+      "cells/ul": 0.001,
+      "k/ul": 1.0,
+      "x10^3/ul": 1.0
+    },
+    "RBC": {
+      "/mm^3": 1e-06,
+      "/ul": 1e-06,
+      "10^12/l": 1.0,
+      "10^6/ul": 1.0,
+      "m/ul": 1.0,
+      "mil/mm^3": 1.0,
+      "million/ul": 1.0,
+      "x10^6/ul": 1.0
+    },
+    "HGB": {
+      "g/dl": 1.0,
+      "g/l": 0.1,
+      "gm/dl": 1.0
+    },
+    "HCT": {
+      "%": 1.0,
+      "fraction": 100.0,
+      "l/l": 100.0
+    },
+    "MCV": {
+      "fl": 1.0
+    },
+    "MCH": {
+      "pg": 1.0
+    },
+    "MCHC": {
+      "g/dl": 1.0,
+      "g/l": 0.1,
+      "gm/dl": 1.0
+    },
+    "RDW": {
+      "%": 1.0,
+      "fraction": 100.0,
+      "l/l": 100.0
+    },
+    "PLT": {
+      "/mm^3": 0.001,
+      "/ul": 0.001,
+      "10^3/mm^3": 1.0,
+      "10^3/ul": 1.0,
+      "10^9/l": 1.0,
+      "cells/ul": 0.001,
+      "k/ul": 1.0,
+      "x10^3/ul": 1.0
+    },
+    "NEUTp": {
+      "%": 1.0,
+      "fraction": 100.0,
+      "l/l": 100.0
+    }
+  },
+  "unit_normalization": "strip spaces; lowercase; µ/μ->u; ³->^3; ⁶->^6; mm3->mm^3 (fedhealth_ml.preprocess._unit)",
+  "not_model_inputs": [
+    "sex",
+    "ageYears",
+    "symptoms",
+    "district",
+    "province",
+    "latitude",
+    "longitude",
+    "collectedAt",
+    "rule_flags"
+  ]
+}
