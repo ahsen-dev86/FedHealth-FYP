@@ -1,0 +1,2 @@
+# Manifests hash exact bytes; never convert line endings in trained artifacts.
+* -text

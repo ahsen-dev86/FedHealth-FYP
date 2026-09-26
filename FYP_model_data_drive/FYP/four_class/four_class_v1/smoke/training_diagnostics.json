@@ -1,0 +1,30 @@
+[
+  {
+    "round": 1,
+    "split": "local training diagnostics, not held-out",
+    "loss": 0.3561576734775686,
+    "accuracy": 0.8700892857142857,
+    "balanced_accuracy": 0.8700892857142857,
+    "macro_f1": 0.8701929080600862,
+    "weighted_f1": 0.8701929080600863,
+    "sick_called_healthy": 95,
+    "per_class_recall": "[0.9035714285714286, 0.8660714285714286, 0.8303571428571429, 0.8803571428571428]",
+    "per_class_support": "[560, 560, 560, 560]",
+    "confusion_matrix": "[[506, 18, 25, 11], [19, 485, 31, 25], [50, 39, 465, 6], [26, 34, 7, 493]]",
+    "evaluation_rows": 2240
+  },
+  {
+    "round": 2,
+    "split": "local training diagnostics, not held-out",
+    "loss": 0.3558336637415306,
+    "accuracy": 0.8691964285714285,
+    "balanced_accuracy": 0.8691964285714285,
+    "macro_f1": 0.8693379865249731,
+    "weighted_f1": 0.8693379865249731,
+    "sick_called_healthy": 94,
+    "per_class_recall": "[0.9, 0.8642857142857143, 0.8339285714285715, 0.8785714285714286]",
+    "per_class_support": "[560, 560, 560, 560]",
+    "confusion_matrix": "[[504, 17, 28, 11], [19, 484, 32, 25], [49, 39, 467, 5], [26, 35, 7, 492]]",
+    "evaluation_rows": 2240
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "sha256": {
+    "ann.keras": "9234d415324cae33d1ff2aaab0be7b5a5d2d0eb2a4c4bbdb4cd36e5f00540c74",
+    "preprocessor.joblib": "f293d2d9bd6860a8a78b71f809c4727016d55c76aa99a1b416092b1678b801ee",
+    "xgb.json": "60ddfca8351445a55290b11ad4c9f8f093bb8507de5f9a23d1e5452903a81c10",
+    "meta.json": "a62b79ffb21e3c8422099a99c76f27398a75958dab4db19326cd599a0d7a478c"
+  }
+}
