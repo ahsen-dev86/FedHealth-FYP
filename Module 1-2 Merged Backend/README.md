@@ -1,5 +1,10 @@
 # FedHealth — Module 1 (Database) + Module 2 (Authentication), merged
 
+> **Integration status (feat/integration, 2026-09-26):** this backend now also mounts the Module 6
+> domain API (reports, predictions, OCR, NIH, model registry) and runs without Docker against local
+> PostgreSQL 18 + PostGIS 3.6. Run steps, env variable names and the API contract are in
+> `docs/INTEGRATION_HANDOFF.md`; the historical notes below describe the original Module 1+2 merge.
+
 This reconciles two prior builds of these modules into one tested pair.
 If you're reading this to understand what to trust: **everything in this
 folder was executed against a real PostgreSQL 16 + PostGIS 3.4 instance
