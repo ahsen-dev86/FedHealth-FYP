@@ -1,4 +1,4 @@
-# ml/fedhealth_ml/paillier_utils.py
+# Module 5 Encryption/paillier_utils.py
 # ---------------------------------------------------------------------------
 # Module 5 — Paillier homomorphic encryption for the federated weight exchange.
 #
@@ -103,9 +103,14 @@ def encrypt_weights(pub, weights):
     return {"shapes": shapes, "enc": enc}
 
 
-def decrypt_weights(priv, model):
-    """Decrypt an encrypted model back to a list-of-layer arrays (labs only)."""
-    flat = np.array([priv.decrypt(e) for e in model["enc"]], dtype=np.float64)
+def decrypt_weights(priv, model, divisor=1):
+    """Decrypt an encrypted model back to a list-of-layer arrays (key holders only).
+
+    `divisor` is applied in float64 before the float32 cast, so E(sum n_i*w_i)
+    decrypted with divisor=N reproduces plaintext FedAvg without extra rounding."""
+    if int(divisor) < 1:
+        raise ValueError("divisor must be a positive integer")
+    flat = np.array([priv.decrypt(e) for e in model["enc"]], dtype=np.float64) / int(divisor)
     return _unflatten(flat, model["shapes"])
 
 
@@ -141,6 +146,15 @@ def deserialize_encrypted(pub, blob):
     payload = json.loads(blob.decode("utf-8"))
     enc = [paillier.EncryptedNumber(pub, int(c), int(exp)) for c, exp in payload["data"]]
     return {"shapes": payload["shapes"], "enc": enc}
+
+
+def ciphertext_sha256(model):
+    """Fingerprint of an encrypted model (does not re-randomize the ciphertexts)."""
+    import hashlib
+    digest = hashlib.sha256(json.dumps(model["shapes"]).encode("utf-8"))
+    for e in model["enc"]:
+        digest.update(f"{e.ciphertext(be_secure=False)}:{e.exponent};".encode("ascii"))
+    return digest.hexdigest()
 
 
 def count_weights(weights):

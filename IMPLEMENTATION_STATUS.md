@@ -16,7 +16,7 @@ The supplied scope and technical explanation remain the architecture references.
 The new handoff replaces their data/model counts with ten features and four outputs.
 ANN weights are federated; XGBoost remains local (central reference head in Colab).
 Module 4 is plaintext FedAvg with server-authenticated TLS, not Paillier or mTLS.
-Module 5 encryption and full Module 9 deployment remain separate work.
+Module 5 (Paillier-encrypted aggregation) is ported and tested; full Module 9 deployment remains separate work.
 
 No old branch is deleted before this replacement is verified and merged.
 No clinical accuracy, privacy proof or improvement from federation is assumed.
@@ -28,3 +28,9 @@ inference/registry consumers and documentation are implemented. The 33-test
 suite and real separate-process TLS smoke pass. The remaining three-seed validation
 matrix was stopped at the user's request; completed runs are recorded separately. See `docs/VERIFICATION.md` for measured results and remaining
 manual Colab/Docker/encryption acceptance gates.
+
+## Module 5 checkpoint
+
+Encrypted ANN federation is implemented in `Module 5 Encryption/` and matches plaintext FedAvg
+(2048-bit, 3 rounds; see `docs/VERIFICATION.md`). Open: 20-round run on the real Colab model,
+threshold key custody, network transport for the encrypted path, and Docker.

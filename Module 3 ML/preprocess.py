@@ -20,7 +20,8 @@ def clean_ranges(df, features=None, *, strict=False):
 
 
 def _unit(value):
-    return str(value).strip().replace("µ", "u").replace("μ", "u").replace("³", "^3").replace("⁶", "^6").replace(" ", "").lower()
+    text = str(value).strip().replace("µ", "u").replace("μ", "u").replace("³", "^3").replace("⁶", "^6").replace(" ", "").lower()
+    return text.replace("mm3", "mm^3")
 
 
 def normalize_units(record, features=None, *, units=None):
@@ -44,11 +45,13 @@ def normalize_units(record, features=None, *, units=None):
         canonical = _unit(schema.UNITS[f])
         factors = {canonical: 1.}
         if f in {"WBC", "PLT"}:
-            factors.update({"/ul": .001, "/mm^3": .001, "cells/ul": .001, "10^9/l": 1.})
+            factors.update({"/ul": .001, "/mm^3": .001, "cells/ul": .001, "10^9/l": 1.,
+                            "x10^3/ul": 1., "k/ul": 1., "10^3/mm^3": 1.})
         if f == "RBC":
-            factors.update({"/ul": 1e-6, "/mm^3": 1e-6, "10^12/l": 1.})
+            factors.update({"/ul": 1e-6, "/mm^3": 1e-6, "10^12/l": 1.,
+                            "mil/mm^3": 1., "million/ul": 1., "x10^6/ul": 1., "m/ul": 1.})
         if f in {"HGB", "MCHC"}:
-            factors["g/l"] = .1
+            factors.update({"g/l": .1, "gm/dl": 1.})
         if f in {"HCT", "RDW", "NEUTp"}:
             factors.update({"fraction": 100., "l/l": 100.})
         if given not in factors:

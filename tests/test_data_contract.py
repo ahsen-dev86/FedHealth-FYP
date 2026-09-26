@@ -70,6 +70,19 @@ def test_explicit_unit_conversion_and_no_guessing():
             normalize_units({"WBC": v}, units=schema.UNITS)
 
 
+def test_report_style_unit_strings_are_accepted():
+    """Units exactly as printed on a typical lab report (plain '/mm3', 'mil/mm3')."""
+    record = {"WBC": 9010, "RBC": 4.47, "HGB": 12.4, "HCT": 38, "MCV": 85, "MCH": 28,
+              "MCHC": 33, "RDW": 13, "PLT": 147000, "NEUTp": 69}
+    units = {"WBC": "/mm3", "RBC": "mil/mm3", "HGB": "g/dL", "HCT": "%", "MCV": "fl",
+             "MCH": "pg", "MCHC": "g/dL", "RDW": "%", "PLT": "/mm3", "NEUTp": "%"}
+    result = normalize_units(record, units=units)
+    assert result["WBC"] == pytest.approx(9.01) and result["PLT"] == pytest.approx(147)
+    assert result["RBC"] == pytest.approx(4.47)
+    with pytest.raises(ValueError, match="Unsupported unit"):
+        normalize_units({"HGB": 7.7}, units={"HGB": "mmol/L"})
+
+
 @pytest.mark.parametrize("mode,alpha,labs", [("iid", .5, 3), ("non_iid", .5, 3), ("non_iid", .1, 3), ("source", .5, 5)])
 def test_partitions_exact_coverage_reproducible_train_only(dataset, mode, alpha, labs):
     kwargs = dict(num_labs=labs, mode=mode, alpha=alpha, provenance=dataset.provenance)
