@@ -1,3 +1,8 @@
+> Four-class migration status: this legacy encrypted demo is not compatible with
+> the new Module 3/4 artifact contract yet. Do not use it to claim encrypted
+> four-class training. Port its client/data flow and compare encrypted and
+> plaintext aggregation before enabling it. The cryptographic source is retained.
+
 # FedHealth — Federated Learning Module (Module 4)
 
 The Lab Tier (Flower clients), the Server Tier (blind aggregator), and FedAvg.

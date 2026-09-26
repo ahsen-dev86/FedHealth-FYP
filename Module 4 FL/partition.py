@@ -1,80 +1,58 @@
-# fl/common/partition.py
-# ---------------------------------------------------------------------------
-# Splits ONE central dataset into N per-lab shards so we can simulate a
-# federation on a single machine (we don't have real multi-lab access — this is
-# the sanctioned FYP simplification). Each shard stands in for "the data that
-# already lives inside lab i" and never moves; only model weights move.
-#
-# Two partition modes:
-#   * iid      — each lab gets a random, class-stratified slice (labs look alike)
-#   * non_iid  — each lab's class mix is skewed via a Dirichlet split, so labs
-#                are heterogeneous. This is the realistic, harder case for FedAvg
-#                and a good thing to demonstrate at defense.
-# ---------------------------------------------------------------------------
-import argparse
-import os
-import sys
-
+"""Exhaustive, disjoint train-only IID, Dirichlet or source lab partitions."""
 import numpy as np
 import pandas as pd
+from fedhealth_ml import schema
+from fedhealth_ml.data import validate_frame
 
-# Make the shared fedhealth_ml package importable (repo layout: ../../ml).
-from fedhealth_ml import schema  # noqa: E402
 
-
-def partition_dataframe(df, num_labs, mode="iid", label_col="Diagnosis",
-                        alpha=0.5, seed=42):
-    """Return a list of `num_labs` DataFrames (the per-lab shards)."""
+def partition_dataframe(frame, num_labs=3, mode="iid", seed=42, alpha=.5, provenance=None):
+    validate_frame(frame, require_all_splits=False)
+    if set(frame.split) != {"train"}:
+        raise ValueError("Labs may receive training rows only")
+    if mode not in {"iid", "non_iid", "source"} or num_labs < 3 or not np.isfinite(alpha) or alpha <= 0:
+        raise ValueError("Invalid partition configuration; require at least three labs")
+    df = frame.reset_index(drop=True)
     rng = np.random.default_rng(seed)
-    df = df.reset_index(drop=True)
-
-    if mode == "iid":
-        # Stratified round-robin: shuffle within each class, deal to labs in turn.
-        shards = [[] for _ in range(num_labs)]
-        for _, grp in df.groupby(label_col):
-            idx = grp.sample(frac=1.0, random_state=seed).index.to_numpy()
-            for j, i in enumerate(idx):
-                shards[j % num_labs].append(i)
-        return [df.loc[s].reset_index(drop=True) for s in shards]
-
-    if mode == "non_iid":
-        # Dirichlet class-skew: each lab draws a different class proportion.
-        shards = [[] for _ in range(num_labs)]
-        for _, grp in df.groupby(label_col):
-            idx = grp.sample(frac=1.0, random_state=seed).index.to_numpy()
-            proportions = rng.dirichlet([alpha] * num_labs)
-            cuts = (np.cumsum(proportions) * len(idx)).astype(int)[:-1]
-            for j, chunk in enumerate(np.split(idx, cuts)):
-                shards[j].extend(chunk.tolist())
-        return [df.loc[s].sample(frac=1.0, random_state=seed).reset_index(drop=True)
-                for s in shards]
-
-    raise ValueError(f"unknown mode: {mode}")
-
-
-def write_shards(csv_path, out_dir, num_labs, mode="iid", label_col="Diagnosis", seed=42):
-    """Partition a CSV and write lab_00.csv .. lab_NN.csv into out_dir."""
-    os.makedirs(out_dir, exist_ok=True)
-    df = pd.read_csv(csv_path)
-    shards = partition_dataframe(df, num_labs, mode=mode, label_col=label_col, seed=seed)
-    paths = []
-    for i, shard in enumerate(shards):
-        p = os.path.join(out_dir, f"lab_{i:02d}.csv")
-        shard.to_csv(p, index=False)
-        paths.append(p)
-        print(f"  lab_{i:02d}: {len(shard):4d} rows  "
-              f"(classes: {shard[label_col].nunique()})")
-    return paths
-
-
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Partition a CBC dataset into lab shards")
-    ap.add_argument("--csv", default="../../ml/../anemia_diagnosed_cbc_data_v4.csv",
-                    help="path to the source CSV")
-    ap.add_argument("--out", default="./client/data", help="output dir for shards")
-    ap.add_argument("--labs", type=int, default=4)
-    ap.add_argument("--mode", choices=["iid", "non_iid"], default="iid")
-    ap.add_argument("--label-col", default="Diagnosis")
-    args = ap.parse_args()
-    print(f"Partitioning {args.csv} into {args.labs} {args.mode} labs:")
-    write_shards(args.csv, args.out, args.labs, mode=args.mode, label_col=args.label_col)
+    group_ids = df.groupby(schema.FEATURES, sort=True).ngroup()
+    groups = [np.flatnonzero(group_ids == g) for g in sorted(group_ids.unique())]
+    labels = [df.iloc[g[0]].label for g in groups]
+    if mode == "source":
+        if provenance is None:
+            raise ValueError("Source partition requires matching provenance")
+        p = provenance.set_index("row_id").loc[df.row_id]
+        sources = sorted(p.source.unique())
+        if len(sources) != num_labs:
+            raise ValueError(f"Source partition requires {len(sources)} labs")
+        owner = dict(zip(sources, range(num_labs)))
+        bins = [[] for _ in sources]
+        for g in groups:
+            source = p.iloc[g].source.unique()
+            if len(source) != 1:
+                raise ValueError("Duplicate feature group crosses sources; rebuild partition policy")
+            bins[owner[source[0]]].extend(g)
+    else:
+        for attempt in range(1000):
+            bins = [[] for _ in range(num_labs)]
+            for cls in schema.CLASSES:
+                candidates = np.array([i for i, label in enumerate(labels) if label == cls])
+                rng.shuffle(candidates)
+                probabilities = np.full(num_labs, 1 / num_labs) if mode == "iid" else rng.dirichlet(np.full(num_labs, alpha))
+                chunks = np.array_split(candidates, num_labs) if mode == "iid" else np.split(candidates, np.cumsum(rng.multinomial(len(candidates), probabilities))[:-1])
+                # Rotate IID remainders across labs for balanced row counts.
+                offset = schema.CLASSES.index(cls) if mode == "iid" else 0
+                for i, chunk in enumerate(chunks):
+                    for gid in chunk:
+                        bins[(i + offset) % num_labs].extend(groups[gid])
+            if min(map(len, bins)) >= 1:
+                break
+        else:
+            raise ValueError("Could not generate non-empty partitions in 1000 attempts")
+    shards = [df.iloc[rng.permutation(b)].reset_index(drop=True) for b in bins]
+    joined = pd.concat(shards)
+    if joined.row_id.duplicated().any() or set(joined.row_id) != set(df.row_id):
+        raise ValueError("Partition lost or duplicated rows")
+    for group in groups:
+        ids = set(df.iloc[group].row_id)
+        if sum(bool(ids & set(shard.row_id)) for shard in shards) != 1:
+            raise ValueError("Duplicate group split between labs")
+    return shards

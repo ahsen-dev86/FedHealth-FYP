@@ -14,7 +14,7 @@ const { logEvent } = require('../middleware/audit');
 /** Ensure an ml_models row exists+active for the served model; return its id. */
 async function resolveModelId(name, version, classes, actor) {
   const active = await MlModels.getActive(name);
-  if (active) return active.id;
+  if (active && active.version === version && JSON.stringify(active.classes) === JSON.stringify(classes)) return active.id;
 
   // No active version registered yet — register the one the inference service is
   // actually serving, so predictions reference a real model row. (Auto-register
@@ -39,18 +39,17 @@ async function resolveModelId(name, version, classes, actor) {
  * @returns { persisted, inference, prediction, rule_flags, alerts }
  */
 async function runPrediction({ report, modelName = 'cbc_multiclass', actor }) {
-  const inf = await Inference.infer(modelName, report.cbc);
+  const inf = await Inference.infer(modelName, report.cbc, report.cbc_units || report.cbc?.units || null);
   const ruleFlags = inf.rule_flags || {};
 
-  // Rules-only backend (e.g. thal_screen before a dataset exists): no ML scores
-  // to persist, but the interpretable flag is still returned.
+  // A response without verified ML scores must not create a prediction.
   if (!inf.scores) {
     return { persisted: false, inference: inf, prediction: null,
              rule_flags: ruleFlags, alerts: [] };
   }
 
   const modelId = await resolveModelId(
-    inf.model_name, inf.model_version, Object.keys(inf.scores), actor);
+    inf.model_name, inf.model_version, inf.classes, actor);
 
   const prediction = await Predictions.create({
     labReportId: report.id,

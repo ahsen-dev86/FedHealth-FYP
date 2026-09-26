@@ -69,15 +69,18 @@ def class_weights(y_int, n_classes):
 
 
 def train_ann(ann, X_train, y_train, X_val, y_val, class_weight=None,
-              epochs=150, batch_size=32, patience=15, verbose=1):
+              epochs=100, batch_size=32, patience=10, verbose=1, seed=42):
     """Train with early stopping on val loss. Returns the Keras history."""
     import tensorflow as tf
     es = tf.keras.callbacks.EarlyStopping(
-        monitor="val_loss", patience=patience, restore_best_weights=True)
-    return ann.fit(X_train, y_train,
-                   validation_data=(X_val, y_val),
-                   epochs=epochs, batch_size=batch_size,
-                   class_weight=class_weight, callbacks=[es], verbose=verbose)
+        monitor="val_loss", patience=patience, min_delta=1e-4, restore_best_weights=True)
+    train = array_dataset(X_train, y_train, batch_size, shuffle=True, seed=seed)
+    val = array_dataset(X_val, y_val, batch_size)
+    history = ann.fit(train, validation_data=val, epochs=epochs,
+                      class_weight=class_weight, callbacks=[es, tf.keras.callbacks.TerminateOnNaN()], verbose=verbose, shuffle=False)
+    if not all(np.isfinite(v).all() for v in history.history.values()):
+        raise ValueError("Non-finite training history")
+    return history
 
 
 # --- Temperature scaling (calibration) --------------------------------------
@@ -94,6 +97,8 @@ class TemperatureScaler:
         eps = 1e-8
         logits = np.log(np.clip(proba, eps, 1.0))
         y_int = np.asarray(y_int)
+        from .metrics import evaluate
+        evaluate(y_int, proba)
 
         def nll(T):
             z = logits / max(T, 1e-3)
@@ -102,12 +107,16 @@ class TemperatureScaler:
             return -np.mean(np.log(np.clip(p[np.arange(len(y_int)), y_int], eps, 1.0)))
 
         res = minimize_scalar(nll, bounds=(0.05, 10.0), method="bounded")
-        self.T = float(res.x)
+        if not res.success or not np.isfinite(res.fun):
+            raise ValueError("Calibration optimization failed")
+        self.T = float(res.x) if res.fun <= nll(1.0) else 1.0
         return self
 
     def transform(self, proba):
+        if not np.isfinite(self.T) or not .05 <= self.T <= 10.:
+            raise ValueError("Invalid temperature")
         eps = 1e-8
-        z = np.log(np.clip(proba, eps, 1.0)) / self.T
+        z = np.log(np.clip(np.asarray(proba, dtype=np.float64), eps, 1.0)) / self.T
         z = z - z.max(axis=1, keepdims=True)
         p = np.exp(z); p /= p.sum(axis=1, keepdims=True)
         return p
@@ -131,27 +140,30 @@ class HybridModel:
     def _embed(self, X):
         if self._embedder is None:
             self._embedder = embedding_model(self.ann)
-        return self._embedder.predict(X, verbose=0)
+        return np.asarray(self._embedder(np.asarray(X), training=False))
 
     def _features(self, X):
         """XGBoost input = [ANN embedding | scaled raw indices]."""
         return np.hstack([self._embed(X), np.asarray(X)])
 
     def fit_meta(self, X_train, y_train_int, X_val, y_val_int,
-                 n_estimators=300, max_depth=4, learning_rate=0.1):
+                 n_estimators=300, max_depth=4, learning_rate=0.05, seed=42):
         """Train the XGBoost head on ANN embeddings, then calibrate on val.
         Class imbalance is handled with balanced sample weights."""
         from xgboost import XGBClassifier
         from sklearn.utils.class_weight import compute_sample_weight
 
+        if set(np.unique(y_train_int)) != set(range(len(self.classes))):
+            raise ValueError("A local XGBoost head requires all four training classes")
         F_train = self._features(X_train)
         sw = compute_sample_weight("balanced", y_train_int)
         self.xgb = XGBClassifier(
             n_estimators=n_estimators, max_depth=max_depth,
             learning_rate=learning_rate, subsample=0.9, colsample_bytree=0.9,
             objective="multi:softprob", num_class=len(self.classes),
-            eval_metric="mlogloss", tree_method="hist", random_state=42)
-        self.xgb.fit(F_train, y_train_int, sample_weight=sw)
+            eval_metric="mlogloss", tree_method="hist", random_state=seed, n_jobs=2, early_stopping_rounds=20)
+        self.xgb.fit(F_train, y_train_int, sample_weight=sw,
+                     eval_set=[(self._features(X_val), y_val_int)], verbose=False)
 
         # Calibrate the (uncalibrated) validation probabilities.
         val_proba = self.xgb.predict_proba(self._features(X_val))
@@ -170,29 +182,10 @@ class HybridModel:
         return [{c: float(round(p, 4)) for c, p in zip(self.classes, row)}
                 for row in proba]
 
-    # --- persistence --------------------------------------------------------
-    def save(self, out_dir):
-        os.makedirs(out_dir, exist_ok=True)
-        self.ann.save(os.path.join(out_dir, "ann.keras"))
-        self.xgb.save_model(os.path.join(out_dir, "xgb.json"))
-        meta = {"model_name": self.model_name, "version": self.version,
-                "classes": self.classes, "calibration": "temperature",
-                "temperature": self.temperature.T}
-        with open(os.path.join(out_dir, "meta.json"), "w") as f:
-            json.dump(meta, f, indent=2)
-
     @classmethod
     def load(cls, out_dir):
-        import tensorflow as tf
-        from xgboost import XGBClassifier
-        with open(os.path.join(out_dir, "meta.json")) as f:
-            meta = json.load(f)
-        ann = tf.keras.models.load_model(os.path.join(out_dir, "ann.keras"))
-        xgb = XGBClassifier()
-        xgb.load_model(os.path.join(out_dir, "xgb.json"))
-        temp = TemperatureScaler(); temp.T = meta["temperature"]
-        return cls(ann, meta["classes"], xgb=xgb, temperature=temp,
-                   model_name=meta["model_name"], version=meta["version"])
+        from .artifacts import load_bundle
+        return load_bundle(out_dir)[1]
 
 
 # --- Flower bridge (used by the FL client in Module 4) ----------------------
@@ -209,29 +202,24 @@ def set_ann_weights(ann, weights):
 
 # --- Metrics (populate ml_models.metrics for the registry) ------------------
 def compute_metrics(y_true_int, y_pred_int, classes):
-    """Per-class + macro metrics. Macro-F1 and per-class recall are the numbers
-    that show the model is balanced across diseases, not just globally accurate."""
-    from sklearn.metrics import (f1_score, balanced_accuracy_score,
-                                 recall_score, precision_score)
-    labels = list(range(len(classes)))
-    per_class = {}
-    rec = recall_score(y_true_int, y_pred_int, labels=labels, average=None, zero_division=0)
-    prec = precision_score(y_true_int, y_pred_int, labels=labels, average=None, zero_division=0)
-    counts = np.bincount(y_true_int, minlength=len(classes))
-    for i, c in enumerate(classes):
-        per_class[c] = {"recall": round(float(rec[i]), 3),
-                        "precision": round(float(prec[i]), 3),
-                        "support": int(counts[i])}
-    return {
-        "macro_f1": round(float(f1_score(y_true_int, y_pred_int, average="macro", zero_division=0)), 3),
-        "balanced_accuracy": round(float(balanced_accuracy_score(y_true_int, y_pred_int)), 3),
-        "per_class_recall": {c: per_class[c]["recall"] for c in classes},
-        "per_class": per_class,
-    }
+    from .metrics import from_confusion
+    from sklearn.metrics import confusion_matrix
+    return from_confusion(confusion_matrix(y_true_int, y_pred_int, labels=range(len(classes))), classes)
 
 
 def write_registry_metrics(out_dir, metrics):
-    """Write metrics.json for the ml_models registry (Module 2 mlModels.register
-    reads this to record how balanced the model is)."""
-    with open(os.path.join(out_dir, "metrics.json"), "w") as f:
-        json.dump(metrics, f, indent=2)
+    from pathlib import Path
+    from .runtime import write_json
+    write_json(Path(out_dir) / "metrics.json", metrics)
+
+
+def array_dataset(X, y, batch_size=32, *, shuffle=False, seed=42):
+    """Bound TF input threads, keeping small Colab/CPU runs predictable."""
+    import tensorflow as tf
+    ds = tf.data.Dataset.from_tensor_slices((np.asarray(X, dtype="float32"), np.asarray(y, dtype="int64")))
+    if shuffle:
+        ds = ds.shuffle(len(X), seed=seed, reshuffle_each_iteration=True)
+    opts = tf.data.Options()
+    opts.threading.private_threadpool_size = 1
+    opts.threading.max_intra_op_parallelism = 1
+    return ds.batch(batch_size).with_options(opts).prefetch(1)

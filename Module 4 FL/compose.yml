@@ -1,0 +1,107 @@
+{
+  "name": "fedhealth-four-class-fl-dev",
+  "services": {
+    "fl-server": {
+      "build": {
+        "context": "..",
+        "dockerfile": "Module 4 FL/Dockerfile"
+      },
+      "command": [
+        "--bind",
+        "0.0.0.0:8080",
+        "--model",
+        "/model",
+        "--plan",
+        "/data/plan.json",
+        "--validation",
+        "/data/validation.csv",
+        "--out",
+        "/output/run",
+        "--rounds",
+        "${FL_ROUNDS:-20}",
+        "--insecure-dev"
+      ],
+      "volumes": [
+        "${FEDHEALTH_MODEL_DIR:?Set FEDHEALTH_MODEL_DIR to the verified model directory}:/model:ro",
+        "${FEDHEALTH_LABS_DIR:?Set FEDHEALTH_LABS_DIR to prepare_labs output}/plan.json:/data/plan.json:ro",
+        "${FEDHEALTH_LABS_DIR:?Set FEDHEALTH_LABS_DIR to prepare_labs output}/validation.csv:/data/validation.csv:ro",
+        "${FEDHEALTH_OUTPUT_DIR:?Set FEDHEALTH_OUTPUT_DIR to an empty writable directory}:/output"
+      ]
+    },
+    "lab-00": {
+      "build": {
+        "context": "..",
+        "dockerfile": "Module 4 FL/Dockerfile.client"
+      },
+      "command": [
+        "--server",
+        "fl-server:8080",
+        "--lab-id",
+        "lab-00",
+        "--shard",
+        "/data/local.csv",
+        "--model",
+        "/model",
+        "--canonical-units",
+        "--insecure-dev"
+      ],
+      "volumes": [
+        "${FEDHEALTH_MODEL_DIR:?Set FEDHEALTH_MODEL_DIR to the verified model directory}:/model:ro",
+        "${FEDHEALTH_LABS_DIR:?Set FEDHEALTH_LABS_DIR to prepare_labs output}/lab-00.csv:/data/local.csv:ro"
+      ],
+      "depends_on": [
+        "fl-server"
+      ]
+    },
+    "lab-01": {
+      "build": {
+        "context": "..",
+        "dockerfile": "Module 4 FL/Dockerfile.client"
+      },
+      "command": [
+        "--server",
+        "fl-server:8080",
+        "--lab-id",
+        "lab-01",
+        "--shard",
+        "/data/local.csv",
+        "--model",
+        "/model",
+        "--canonical-units",
+        "--insecure-dev"
+      ],
+      "volumes": [
+        "${FEDHEALTH_MODEL_DIR:?Set FEDHEALTH_MODEL_DIR to the verified model directory}:/model:ro",
+        "${FEDHEALTH_LABS_DIR:?Set FEDHEALTH_LABS_DIR to prepare_labs output}/lab-01.csv:/data/local.csv:ro"
+      ],
+      "depends_on": [
+        "fl-server"
+      ]
+    },
+    "lab-02": {
+      "build": {
+        "context": "..",
+        "dockerfile": "Module 4 FL/Dockerfile.client"
+      },
+      "command": [
+        "--server",
+        "fl-server:8080",
+        "--lab-id",
+        "lab-02",
+        "--shard",
+        "/data/local.csv",
+        "--model",
+        "/model",
+        "--canonical-units",
+        "--insecure-dev"
+      ],
+      "volumes": [
+        "${FEDHEALTH_MODEL_DIR:?Set FEDHEALTH_MODEL_DIR to the verified model directory}:/model:ro",
+        "${FEDHEALTH_LABS_DIR:?Set FEDHEALTH_LABS_DIR to prepare_labs output}/lab-02.csv:/data/local.csv:ro"
+      ],
+      "depends_on": [
+        "fl-server"
+      ]
+    }
+  }
+}

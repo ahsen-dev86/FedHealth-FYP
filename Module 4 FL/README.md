@@ -1,77 +1,90 @@
-# FedHealth Module 4 — Federated Learning
+# Module 4 — validated four-class ANN federation
 
-Module 4 is the plaintext Flower/FedAvg baseline for the trained Module 3 Model A ANN.
-Each lab keeps its CBC rows locally and sends ANN parameters plus example counts to the server.
-The server loads Module 3's `ann.keras` as the round-zero global model. The shared Module 3
-preprocessor gives every lab the same 14-feature order and scaling.
-Module 4 does not exchange or train the XGBoost head. Module 5 adds Paillier encryption.
+This module fine-tunes the exact verified Module 3 ANN. It uses plaintext FedAvg.
+Only the ANN is federated; the Colab XGBoost head is a centralized reference refit.
+Module 5 Paillier and full Module 9 integration are separate work.
 
-## Actual files
+## Manual simulation
 
-- `prepare_training_split.py`: excludes Module 3 validation/test rows.
-- `partition.py`: creates IID or non-IID lab shards.
-- `task.py`: shared model, preprocessing and metrics.
-- `lims_wrapper.py`: mock local LIMS reader and unit normalization.
-- `client.py`: Flower lab client.
-- `strategy.py`: explicit example-weighted FedAvg.
-- `server.py`: standalone server with optional TLS.
-- `run_simulation.py`: in-process Flower/Ray simulation.
-- `fl_artifacts.py`: saves and reload-checks the final ANN.
-- `gen_certs.sh`: creates demo TLS files.
-- `Dockerfile` and `Dockerfile.client`: server and client images.
+Use Module 3 notebook `04_federated.ipynb`, or from the repository root:
 
-There are no Module 4 notebooks or notebook generator.
+```sh
+python "Module 4 FL/run_simulation.py" --model artifacts/seed42/centralized/model --out artifacts/smoke --rounds 2
+python "Module 4 FL/run_experiments.py" --out artifacts --seeds 42 52 62 --rounds 20
+```
 
-## Correct execution order
+The suite reuses a verified seed-42 centralized run and trains fresh references
+for seeds 52 and 62. Each seed runs IID, Dirichlet alpha 0.5, Dirichlet alpha 0.1
+(three labs each), and source partitions (five labs), always 20 rounds and one
+local epoch. Every lab participates; optimizer Adam 0.0001 is fresh per round,
+batch size 32, no local class reweighting, no local resplitting or synthetic data.
+All 2,240 training rows are assigned once. Exact duplicate feature groups stay
+at one lab; a cross-split duplicate fails the data audit.
 
-Run commands from the repository root. Module 3's `preprocessor.joblib` and `ann.keras`
-are required.
-Every model output path must be new because Module 4 refuses to overwrite evidence.
+Simulation executes Flower NumPyClient/strategy callbacks sequentially to bound
+memory, without Ray. The gRPC path uses those same implementations. This public-
+data simulation is not proof of patient privacy. The reference ANN and preprocessor
+already used all training rows; these experiments measure federated fine-tuning.
 
-1. Install: `python -m pip install -r "Module 4 FL/requirements.txt"`
-2. Prepare only Module 3 training rows:
-   `python "Module 4 FL/prepare_training_split.py" --csv anemia_diagnosed_cbc_data_v4.csv --out module4_training.csv`
-3. Run a simulation:
-   `python "Module 4 FL/run_simulation.py" --csv module4_training.csv --labs 3 --rounds 2 --mode non_iid --local-epochs 1 --shard-dir module4_shards --preprocessor /path/preprocessor.joblib --initial-model /path/ann.keras --output-dir /new/path/federated_ann`
+## Strict checks
 
-The seed-42 split has 896 training, 128 validation and 257 test rows.
-The simulation uses Ray clients on one computer; it is not a multi-machine deployment.
+The aggregator requires exactly the configured labs and counts; rejects unknown,
+duplicate or missing labs, non-finite values, wrong shapes/types, mismatched
+starting weights and preprocessor hashes; and averages by actual row counts.
+Local training diagnostics aggregate confusion counts before metrics. They are
+explicitly not held-out scores. Central validation selects rounds, with test locked.
+Round histories and optional returned/aggregated tensors allow independent FedAvg
+arithmetic checks. Artifact reload verifies selected weights and predictions.
 
-## Separate processes and TLS
+Every round, including round 0, is considered. Select lowest validation log loss
+with macro-F1 no more than 0.05 below round 0 and no additional nonhealthy-to-
+healthy errors. Ties retain the earlier round. All rounds execute. Round-zero
+selection is recorded explicitly and must not be presented as a federated gain.
+These rules are experiment safeguards, not a clinical safety guarantee.
 
-Create shards with `partition.py`, then run `bash "Module 4 FL/gen_certs.sh"`.
-Start `server.py` with `--labs`, `--rounds`, `--local-epochs`, `--preprocessor`,
-`--initial-model`,
-`--output-dir`, `--ca-cert`, `--server-cert`, and `--server-key`.
-Start one `client.py` per lab with its own `--lab-id`, `--shard`, shared
-`--preprocessor`, server address and `--ca-cert`.
+## Separate client/server processes
 
-The server controls local epochs, waits for every configured lab, and rejects
-failed or duplicate updates. TLS is server-authenticated, not client-certificate mTLS.
+First export benchmark shards and a validation-only server file:
+
+```sh
+python "Module 4 FL/prepare_labs.py" --model artifacts/seed42/centralized/model --out artifacts/labs
+python tools/verify_transport.py --model artifacts/seed42/centralized/model --out artifacts/tls_smoke
+```
+
+The verification tool launches a real server and three clients for two rounds,
+with temporary CA/server certificates. Its result and process logs are retained.
+It verifies server-authenticated TLS, not mTLS. Lab IDs and hashes are consistency
+checks, not authentication against an adversarial participant. Missing TLS files
+fail; plaintext requires explicit `--insecure-dev` at both ends.
+
+Standalone commands accept `--model`, `--plan`/`--validation` (server), `--shard`
+and `--canonical-units` or `--units-json` (client). Use `--help` for all arguments.
+The server does not read client training CSVs. It saves an ANN-only bundle because
+it has no lab data for a local XGBoost head. Such a bundle cannot be served as a
+hybrid until a head is trained locally against that exact ANN.
 
 ## Docker
 
-Build from the repository root:
+`compose.yml` is a standalone three-lab development configuration using the actual
+repository paths. Set FEDHEALTH_MODEL_DIR, FEDHEALTH_LABS_DIR and FEDHEALTH_OUTPUT_DIR
+to absolute paths, then run `docker compose -f "Module 4 FL/compose.yml" up --build`.
+It explicitly uses insecure transport on its development network. Mount only each
+lab's own CSV; the coordinator receives only the plan and validation CSV. For TLS,
+provide certificates and replace the insecure flag with the documented TLS options.
+Check `docs/VERIFICATION.md` before claiming a Docker build was executed.
 
-- `docker build -f "Module 4 FL/Dockerfile" -t fedhealth-fl-server .`
-- `docker build -f "Module 4 FL/Dockerfile.client" -t fedhealth-fl-client .`
+## Final reporting
 
-The server image expects `/artifacts/preprocessor.joblib`, `/artifacts/ann.keras`,
-and writable `/output`.
-The client expects the preprocessor and a shard such as `/data/lab_00.csv`.
-Docker Compose wiring is handled separately in Module 9.
+Review validation first, freeze all configurations, then:
 
-## Privacy boundary
+```sh
+python -m fedhealth_ml.final_evaluate --plan artifacts/final_evaluation_plan.json --out artifacts/final_test
+python -m fedhealth_ml.source_holdout --out artifacts/source_holdout
+```
 
-Raw CBC rows stay inside each client process. Module 4 sends plaintext ANN parameters,
-example counts, lab IDs and metrics, so its server is not blind.
-Module 5 is the encrypted variant. The shared preprocessor contains summary
-statistics and feature order, not raw patient rows.
-
-## Tested compatibility
-
-Validated with Python 3.13, Flower 1.24.0, Ray 2.51.1 and TensorFlow 2.20.0.
-Flower's classic APIs are deprecated, so versions must be revalidated before upgrade.
-Testing covered three clients, two non-IID rounds, FedAvg, normalization, TLS,
-checkpoint save/reload, checksums and the 257-row held-out test.
-This is software validation, not clinical validation or a final performance claim.
+The final phase evaluates every fixed model once, with explicit per-class recall,
+subtype/source analysis, ECE and confusion counts. The source analysis is a fresh
+training sensitivity run; existing donor imputation still limits independence.
+Keep all seeds and negative findings. Use seed 42 for integration by prior policy,
+not whichever seed happens to score highest. Do not delete old fix branches until
+this branch is verified, reviewed and merged.

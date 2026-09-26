@@ -1,3 +1,13 @@
+## Four-class Module 3 and Module 4 workflow
+
+The current training path uses `Dataset/fedhealth_cbc_4class.csv` (ten features;
+healthy/anemia/thalassemia/leukemia), the four notebooks in `Module 3 ML`, and the
+verified ANN federation workflow in `Module 4 FL`. See their READMEs and
+[scope reconciliation](docs/FOUR_CLASS_SCOPE_RECONCILIATION.md),
+[verification](docs/VERIFICATION.md), and [migration changes](CHANGELOG-four-class.md).
+Older architecture and assembly notes below do not establish new training,
+encryption, Docker or clinical validation results.
+
 # FedHealth
 
 **A Privacy-Preserving Federated Framework for Epidemiological Intelligence and Disease Prediction**

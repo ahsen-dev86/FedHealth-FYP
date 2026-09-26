@@ -1,3 +1,8 @@
+> Current Module 3/4 status: four-class migration. The older full-stack/privacy
+> descriptions below are historical design context, not verification of the new
+> encrypted path. Module 4 uses plaintext weights and server-authenticated TLS;
+> Module 5 migration and Module 9 deployment remain separate.
+
 # FedHealth
 
 **A privacy-preserving federated framework for epidemiological intelligence and blood-disorder prediction.**
@@ -105,7 +110,7 @@ Each folder has its own README with deeper detail (`db/`, `backend/`, `ml/`,
 - **Docker + Docker Compose** (the simplest path), or Node 18+, Python 3.11+,
   and a PostGIS-enabled PostgreSQL 16 for a manual run.
 - The **three CSV datasets at the repo root**
-  (`anemia_diagnosed_cbc_data_v4.csv`, `thalassemia_alphanorm.csv`,
+  (historical inputs `anemia_diagnosed_cbc_data_v4.csv`, `thalassemia_alphanorm.csv`,
   `biased_leukemia_dataset.csv`) — the inference/FL images copy them in.
 - For the **real** federated model: a Google Colab run of the notebooks
   (produces the artifacts in `models/`). Until then the system serves a clearly
@@ -143,37 +148,20 @@ python fl/run_simulation_paillier.py --labs 3 --rounds 3 --bits 1024
 
 ---
 
-## Run it — training in Colab, then serving the real model
+## Current four-class training and inference
 
-1. Open `ml/notebooks/` in Colab in order: `01_eda` → `02_preprocess` →
-   `03_train_modelA` (and `04_train_modelB` once you've sourced a beta-thal
-   dataset — see that notebook). Make `fedhealth_ml` importable (clone the repo
-   or upload `ml/`) and upload the CSVs.
-2. Download the produced artifacts into `models/cbc_multiclass/`
-   (`preprocessor.joblib`, `ann.keras`, `xgb.json`, `meta.json`, `metrics.json`).
-3. Uncomment `tensorflow` + `xgboost` in `ml/inference_service/requirements.txt`,
-   then `docker compose up --build`. The inference service now serves the real
-   hybrid model instead of the fallback.
-4. Register the version + its metrics: `POST /models/register` (admin) using
-   `meta.json` + `metrics.json`.
+Use the four staged notebooks in `Module 3 ML`: `01_eda`, `02_preprocess`,
+`03_train_centralized`, `04_federated`. Their README gives executable commands.
+The ten-feature model predicts healthy/anemia/thalassemia/leukemia confidence
+scores. ANN weights are federated; XGBoost is a local head, refit centrally for
+Colab reference comparisons. The earlier nine-class/carrier notebooks are archived.
+No old performance figure applies to this dataset. Rules are research-only and
+not active clinical flags. Missing trained artifacts do not activate a fallback.
 
----
-
-## The models
-
-- **Model A — `cbc_multiclass`** (works today): a Hybrid **ANN → XGBoost** with
-  temperature calibration, trained on the anemia CBC dataset, which already
-  contains real *Leukemia* and *Healthy* rows. Output is a **calibrated
-  per-condition confidence vector over 9 classes** — never a categorical
-  diagnosis. Validated proxy performance: macro-F1 ≈ 0.88, Healthy recall ≈ 0.96.
-- **Model B — `thal_screen`** (beta-thalassemia trait): the alpha-carrier dataset
-  isn't CBC-separable (AUC ≈ 0.5), so Model B targets **beta-thal trait**, which
-  is CBC-detectable. Notebook 04 is dataset-ready with a separability guard.
-- **Thalassemia rule layer** (`fedhealth_ml/rules.py`): an interpretable
-  Mentzer-index + discriminant-index screen that runs *now* on the same CBC
-  indices and surfaces "possible beta-thal trait" alongside the ML scores.
-
-The **doctor confirms** every diagnosis; the model only ever emits confidences.
+Preserve complete selected artifact bundles, including manifest/reload markers,
+and register measured final metrics under the exact saved version. See
+`docs/FOUR_CLASS_SCOPE_RECONCILIATION.md` and `docs/VERIFICATION.md` for current
+architecture boundaries, dataset caveats and checks actually performed.
 
 ---
 
