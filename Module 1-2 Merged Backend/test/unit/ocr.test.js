@@ -86,6 +86,29 @@ Hb 12.4`);
   assert.deepEqual(r.missing, ['RBC', 'HCT', 'MCV', 'MCH', 'MCHC', 'RDW', 'PLT', 'NEUTp']);
 });
 
+test('common OCR misread "ROW-CV" is read as RDW; a bare word "row" is not', () => {
+  assert.equal(parseCbcFromText('ROW-CV 13 %').cbc.RDW, 13);
+  assert.equal(parseCbcFromText('row 5 of 12 %').extractedCount, 0);
+});
+
+test('image OCR on the rendered example report (tesseract installed)', async (t) => {
+  const { ocr: cfg } = require('../../src/config');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  if (cfg.tesseractPath !== 'tesseract' && !fs.existsSync(cfg.tesseractPath)) return t.skip('tesseract not installed');
+  const { recognize } = require('../../src/services/ocr');
+  const copy = path.join(os.tmpdir(), `fedhealth-ocr-test-${process.pid}.png`);
+  fs.copyFileSync(path.join(__dirname, '../fixtures/cbc_report.png'), copy);
+  try {
+    const r = parseCbcFromText(await recognize(copy));
+    assert.deepEqual(r.cbc, { WBC: 9010, RBC: 4.47, HGB: 12.4, HCT: 38, MCV: 85, MCH: 28, MCHC: 33, RDW: 13, PLT: 147000, NEUTp: 69 });
+    assert.ok(FEATURES.every((f) => r.unitStatus[f] === 'accepted'));
+  } finally {
+    fs.unlinkSync(copy);
+  }
+});
+
 test('HbA2 and lymphocytes are not model features', () => {
   const r = parseCbcFromText(`HbA2 3.1 %
 Lymphocytes 25 %`);

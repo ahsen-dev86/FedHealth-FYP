@@ -6,7 +6,15 @@
 // ---------------------------------------------------------------------------
 require('dotenv').config();
 
+const fs = require('fs');
+
 const isProd = process.env.NODE_ENV === 'production';
+
+// Windows installers put tesseract outside PATH; fall back to PATH lookup elsewhere.
+function defaultTesseract() {
+  const windows = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe';
+  return process.platform === 'win32' && fs.existsSync(windows) ? windows : 'tesseract';
+}
 
 // Fail fast in production if the JWT secret was left at its insecure default.
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
@@ -49,6 +57,13 @@ module.exports = {
     url: (process.env.INFERENCE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, ''),
     timeoutMs: parseInt(process.env.INFERENCE_TIMEOUT_MS || '20000', 10),
     apiKey: process.env.INFERENCE_API_KEY || '',
+  },
+
+  // Image OCR: the tesseract binary (UB-Mannheim build on Windows) and its language.
+  ocr: {
+    tesseractPath: process.env.TESSERACT_PATH || defaultTesseract(),
+    lang: process.env.OCR_LANG || 'eng',
+    timeoutMs: parseInt(process.env.OCR_TIMEOUT_MS || '60000', 10),
   },
 
   // NIH outbreak-cluster alerting: N cases of one condition in one district

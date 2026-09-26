@@ -125,6 +125,8 @@ const EXAMPLE_TEXT = [
   'Neutrophils                     69          %          40 - 75',
   'Lymphocytes                     25          %          20 - 40',
 ].join('\n');
+// District-level centroid, as the Doctor Portal's district picker sends it (not a patient address).
+const LAHORE = { district: 'Lahore', province: 'Punjab', latitude: 31.55, longitude: 74.34 };
 const EXPECTED = { anemia: 0.588, healthy: 0.224, thalassemia: 0.169, leukemia: 0.019 };
 // Training-split leukemia rows (row_id 2, 8, 15; test split untouched) and row 25,
 // whose top score is healthy while leukemia (0.48) still crosses the 0.30 flag.
@@ -172,7 +174,7 @@ async function run(db) {
   const patientRef = `e2e-pt-${RUN}`;
   const a1 = await http('POST', '/predict', {
     token: doctor,
-    body: { patientRef, sex: 'F', ageYears: 34, district: 'Lahore', province: 'Punjab',
+    body: { patientRef, sex: 'F', ageYears: 34, ...LAHORE,
             symptomsText: 'fatigue and pale skin', cbc: EXAMPLE_CBC, units: EXAMPLE_UNITS },
   });
   const s1 = a1.data.inference?.scores || {};
@@ -202,14 +204,22 @@ async function run(db) {
   check('OCR values and units equal the report', JSON.stringify(a2.data.cbc) === JSON.stringify(EXAMPLE_CBC)
     && FEATURES.every((f) => a2.data.units[f].toLowerCase() === EXAMPLE_UNITS[f].toLowerCase()));
   const a2p = await http('POST', '/predict', {
-    token: doctor, body: { patientRef, source: 'ocr', district: 'Lahore', province: 'Punjab', cbc: a2.data.cbc, units: a2.data.units },
+    token: doctor, body: { patientRef, source: 'ocr', ...LAHORE, cbc: a2.data.cbc, units: a2.data.units },
   });
   check('OCR output accepted by /predict with identical scores', a2p.status === 201
     && CLASSES.every((c) => Math.abs(a2p.data.inference.scores[c] - s1[c]) < 1e-9));
   const fd = new FormData();
-  fd.append('image', new Blob([Buffer.from('not really an image')], { type: 'image/png' }), 'report.png');
+  const png = fs.readFileSync(path.join(__dirname, '../test/fixtures/cbc_report.png'));
+  fd.append('image', new Blob([png], { type: 'image/png' }), 'cbc_report.png');
   const img = await http('POST', '/ocr', { token: doctor, raw: fd });
-  check('image OCR without the tesseract engine answers 501 (not a crash)', img.status === 501, img.data.error);
+  log(`    → engine ${img.data.engine}; cbc ${short(img.data.cbc)}; units ${short(img.data.units)}`);
+  check('image OCR (tesseract) of the rendered report returns the 10 values with printed units', img.status === 200
+    && img.data.engine === 'tesseract' && JSON.stringify(img.data.cbc) === JSON.stringify(EXAMPLE_CBC)
+    && FEATURES.every((f) => img.data.unitStatus?.[f] === 'accepted'));
+  const notImage = new FormData();
+  notImage.append('image', new Blob([Buffer.from('%PDF-1.4 not an image')], { type: 'application/pdf' }), 'report.pdf');
+  const pdf = await http('POST', '/ocr', { token: doctor, raw: notImage });
+  check('non-image upload is rejected with 400', pdf.status === 400, pdf.data.error);
   const hist = await http('GET', `/patients/${patientRef}/history`, { token: doctor });
   check('patient history returns both reports with their latest prediction', hist.status === 200 && hist.data.length === 2
     && hist.data.every((r) => r.prediction && r.prediction.model_version));
@@ -247,7 +257,7 @@ async function run(db) {
   check('third case in the district raised one leukemia outbreak_cluster alert',
     flagged[2].data.alerts?.some((a) => a.type === 'outbreak_cluster' && a.condition === 'leukemia')
     && !flagged[0].data.alerts?.some((a) => a.type === 'outbreak_cluster'));
-  const border = await http('POST', '/predict', { token: doctor, body: { patientRef: `e2e-border-${RUN}`, district: 'Lahore', province: 'Punjab', cbc: BORDERLINE_ROW, canonicalUnits: true } });
+  const border = await http('POST', '/predict', { token: doctor, body: { patientRef: `e2e-border-${RUN}`, ...LAHORE, cbc: BORDERLINE_ROW, canonicalUnits: true } });
   log(`    → top ${border.data.prediction?.top_condition} ${border.data.prediction?.top_confidence}; leukemia ${border.data.inference?.scores?.leukemia?.toFixed(3)}; alerts ${short((border.data.alerts || []).map((a) => [a.type, a.condition]))}`);
   check('risk flag from leukemia score is alerted as leukemia even when another class is top',
     border.data.prediction?.top_condition !== 'leukemia' && border.data.alerts?.some((a) => a.type === 'high_risk_case' && a.condition === 'leukemia'));
@@ -261,6 +271,11 @@ async function run(db) {
   log(`    → cluster ${short(mine)}`);
   check('NIH cluster view aggregates the leukemia cases (no patient data)', mine?.case_count === 3 && mine?.high_risk_count === 3
     && !('patient_ref' in (mine || {})) && !('cbc' in (mine || {})));
+  const anemiaClusters = await http('GET', '/nih/clusters?condition=anemia&province=Punjab', { token: nih.token });
+  const lahore = anemiaClusters.data.find((c) => c.district === 'Lahore');
+  log(`    → Lahore anemia cluster ${short(lahore)}`);
+  check('clusters carry rounded map coordinates, not an exact centroid', lahore && lahore.approx_lat === 31.55
+    && lahore.approx_lng === 74.34 && !('centroid' in lahore));
   const badCond = await http('GET', '/nih/clusters?condition=iron_deficiency_anemia', { token: nih.token });
   check('NIH cluster filter rejects an old nine-class name', badCond.status === 400);
   const nihPredict = await http('POST', '/predict', { token: nih.token, body: { patientRef: 'x', cbc: { HGB: 12 }, canonicalUnits: true } });

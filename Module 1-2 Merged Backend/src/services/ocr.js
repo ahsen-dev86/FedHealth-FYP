@@ -1,17 +1,22 @@
 // backend/src/services/ocr.js
 // ---------------------------------------------------------------------------
 // Module 6.2.1 — reading a paper/PDF CBC report.
-//   * recognize()        runs Tesseract on an uploaded image (optional engine:
-//                        the node-tesseract-ocr package plus the `tesseract`
-//                        binary; without them image OCR answers 501)
+//   * recognize()        preprocesses an uploaded image with sharp and runs the
+//                        `tesseract` binary (TESSERACT_PATH; 501 if missing)
 //   * parseCbcFromText() extracts the 10 model features AND the unit string
 //                        printed next to each value, e.g. WBC 9,010 "/mm3".
 // Units are returned exactly as printed; the API converts them with the
 // exported normalize_units table and rejects anything it does not accept, so
 // the doctor must confirm or pick a unit instead of the parser guessing one.
 // ---------------------------------------------------------------------------
+const fs = require('fs');
+const { execFile } = require('child_process');
+const sharp = require('sharp');
 const { HttpError } = require('../middleware/errors');
+const { ocr: ocrConfig } = require('../config');
 const { FEATURES, unitFactor, inRange, normalizeUnit } = require('../contract');
+
+const TARGET_WIDTH = 3300; // ~2x a 150-dpi A4 scan; phone photos are already this wide
 
 // Label patterns per feature. Longer/more specific labels come first so that
 // "Mean corpuscular haemoglobin concentration" is MCHC, not MCH or HGB.
@@ -19,7 +24,8 @@ const FEATURE_LABELS = [
   ['MCHC', [/\bmchc\b/i, /mean\s+corpuscular\s+h(?:a)?emoglobin\s+conc(?:entration)?\.?/i]],
   ['MCH', [/\bmch\b/i, /mean\s+corpuscular\s+h(?:a)?emoglobin\b/i]],
   ['MCV', [/\bmcv\b/i, /mean\s+corpuscular\s+volume/i]],
-  ['RDW', [/\brdw(?:[\s-]*(?:cv|sd))?\b/i, /red\s+cell\s+distribution\s+width/i]],
+  // "ROW-CV": Tesseract often reads the D of RDW as O; only accepted with the -CV/-SD suffix.
+  ['RDW', [/\brdw(?:[\s-]*(?:cv|sd))?\b/i, /\br[o0]w[\s-]*(?:cv|sd)\b/i, /red\s+cell\s+distribution\s+width/i]],
   ['HCT', [/\bhct\b/i, /\bh(?:a)?ematocrit\b/i, /\bpcv\b/i, /packed\s+cell\s+volume/i]],
   ['HGB', [/\bh(?:a)?emoglobin\b/i, /\bhgb\b/i, /\bhb\b/i]],
   ['RBC', [/\btotal\s+rbc(?:\s+count)?\b/i, /\br\.?b\.?c\.?(?:\s+count)?\b/i, /red\s+blood\s+cells?(?:\s+count)?/i, /red\s+cell\s+count/i]],
@@ -51,19 +57,53 @@ const UNIT_RE = new RegExp([
 ].join('|'), 'i');
 const NUMBER_RE = /(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d,])/;
 
-async function recognize(imagePath, lang = 'eng') {
-  let tesseract;
+/**
+ * Prepare an uploaded photo/scan for Tesseract: honour EXIF rotation, grayscale,
+ * stretch contrast, and upscale small images (Tesseract drops decimal points
+ * when glyphs are small: 4.47 read as 447 at report-scan size, correct at 2x).
+ */
+async function preprocess(inputPath) {
+  const image = sharp(inputPath, { failOn: 'error' }).rotate();
+  const { width } = await image.metadata();
+  const scale = width ? Math.min(3, Math.max(1, TARGET_WIDTH / width)) : 1;
+  const out = `${inputPath}.ocr.png`;
+  await image
+    .resize({ width: Math.round((width || TARGET_WIDTH) * scale), kernel: 'lanczos3' })
+    .grayscale()
+    .normalise()
+    .png()
+    .toFile(out);
+  return out;
+}
+
+function runTesseract(imagePath, lang) {
+  return new Promise((resolve, reject) => {
+    // execFile with an argument list: no shell, so nothing from the request reaches a command line.
+    execFile(ocrConfig.tesseractPath,
+      [imagePath, 'stdout', '-l', lang, '--oem', '1', '--psm', '6', '-c', 'preserve_interword_spaces=1'],
+      { timeout: ocrConfig.timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)));
+  });
+}
+
+/** Run Tesseract on an uploaded image file and return the recognized text. */
+async function recognize(imagePath, lang = ocrConfig.lang) {
+  if (!/^[a-z]{3}(?:\+[a-z]{3})*$/.test(lang)) throw new HttpError(400, 'lang must be like "eng" or "eng+urd"');
+  let prepared;
   try {
-    // eslint-disable-next-line global-require
-    tesseract = require('node-tesseract-ocr');
-  } catch {
-    throw new HttpError(501, 'Image OCR needs the node-tesseract-ocr package and the tesseract engine; '
-      + 'paste the report text instead (field "text")');
+    prepared = await preprocess(imagePath);
+  } catch (e) {
+    throw new HttpError(400, `Could not read the image (${e.message}); upload a PNG, JPEG, WebP or TIFF`);
   }
   try {
-    return await tesseract.recognize(imagePath, { lang, oem: 1, psm: 6 });
+    return await runTesseract(prepared, lang);
   } catch (e) {
-    throw new HttpError(501, `Image OCR failed (is the tesseract binary installed?): ${e.message}`);
+    if (e.code === 'ENOENT') {
+      throw new HttpError(501, 'Image OCR needs the tesseract engine (set TESSERACT_PATH); paste the report text instead');
+    }
+    throw new HttpError(422, `OCR failed: ${String(e.message).split('\n')[0]}`);
+  } finally {
+    fs.unlink(prepared, () => {});
   }
 }
 

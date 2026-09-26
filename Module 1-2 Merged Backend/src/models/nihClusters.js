@@ -18,11 +18,16 @@ async function getClusters({ province = null, condition = null } = {}) {
       ORDER BY day DESC, case_count DESC`,
     [province, condition]
   );
-  return rows.map((r) => ({
+  // The map plots approx_lat/approx_lng: the cluster centroid rounded to 0.01°
+  // (~1 km), so a sparse cluster is not pinned to one report's exact point.
+  const approx = (v) => (v == null ? null : Math.round(v * 100) / 100);
+  return rows.map(({ centroid, ...r }) => ({
     ...r,
     case_count: Number(r.case_count),
     avg_confidence: r.avg_confidence === null ? null : Number(r.avg_confidence),
     high_risk_count: Number(r.high_risk_count),
+    approx_lat: approx(centroid?.coordinates?.[1]),
+    approx_lng: approx(centroid?.coordinates?.[0]),
   }));
 }
 

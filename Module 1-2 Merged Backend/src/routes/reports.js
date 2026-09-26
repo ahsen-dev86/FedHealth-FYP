@@ -34,9 +34,13 @@ const { reportBody, predictExistingBody, symptomsBody } = require('../validators
 const { contract } = require('../contract');
 
 const router = express.Router();
+const OCR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/tiff']);
 const upload = multer({
   dest: path.join(os.tmpdir(), 'fedhealth-uploads'),
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8 MB, one report image
+  fileFilter: (req, file, cb) => (OCR_TYPES.has(file.mimetype)
+    ? cb(null, true)
+    : cb(new HttpError(400, 'Upload a PNG, JPEG, WebP or TIFF image of the report (PDFs: paste the text)'))),
 });
 
 // A lab_tech's reports inherit their lab's geo; a doctor may pass
@@ -147,7 +151,7 @@ router.post('/ocr', requireAuth,
     let engine = 'text';
     if (req.file) {
       try {
-        text = await ocr.recognize(req.file.path, req.body?.lang || 'eng');
+        text = await ocr.recognize(req.file.path, req.body?.lang || undefined);
         engine = 'tesseract';
       } finally {
         fs.unlink(req.file.path, () => {}); // always clean up the temp upload
