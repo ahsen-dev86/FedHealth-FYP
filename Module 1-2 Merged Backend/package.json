@@ -19,7 +19,8 @@
     "demo:users": "node scripts/create-demo-users.js",
     "demo:code": "node scripts/demo-code.js",
     "test:robustness": "node scripts/e2e-robustness.js",
-    "snapshot:model-health": "node scripts/export-model-health-snapshot.js"
+    "snapshot:model-health": "node scripts/export-model-health-snapshot.js",
+    "demo:help": "node scripts/seed-help-portal.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

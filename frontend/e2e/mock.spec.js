@@ -82,7 +82,7 @@ test('doctor: OCR fills values and printed units for review', async ({ page }) =
   await expect(page.getByTestId('cbc-field-PLT')).toContainText('Printed on report: /mm3');
 });
 
-test('NIH: Model Health shows the registered model, limitations and labelled sample data', async ({ page }) => {
+test('NIH: Model Health shows the registered model and labelled sample data', async ({ page }) => {
   await signIn(page, 'officer@nih.org.pk');
   await expect(page.getByRole('heading', { name: 'Surveillance Dashboard' })).toBeVisible();
   await page.getByRole('link', { name: 'Model Health' }).click();
@@ -90,10 +90,8 @@ test('NIH: Model Health shows the registered model, limitations and labelled sam
   await expect(page.getByTestId('model-card')).toContainText('v2-four-class-seed42-b24108b19482');
   await expect(page.getByTestId('model-card')).toContainText('temperature scaling');
   await expect(page.getByTestId('stat-accuracy')).toHaveText('88.8%');
-  const limits = page.getByTestId('limitations-panel');
-  await expect(limits).toContainText('Unseen-source accuracy: 29%–87%');
-  await expect(limits).toContainText('not been validated on data from unseen laboratories');
-  await expect(limits).toContainText('did not beat the starting model in 9 of 12');
+  // Limitations are documented on paper; the panel is intentionally not on this page.
+  await expect(page.getByText('Known limitations')).toHaveCount(0);
   const enc = page.getByTestId('encryption-card');
   await expect(enc).toContainText('12 plaintext runs');
   await expect(enc).toContainText('Paillier 2048-bit · 5 rounds');
@@ -112,4 +110,16 @@ test('NIH: surveillance filters on the model classes only', async ({ page }) => 
   await expect(table).toContainText('Thalassemia');
   await expect(table).not.toContainText('Healthy');
   await expect(page.locator('body')).not.toContainText(OLD_LABELS);
+
+  // The filter dropdowns open above the map: Playwright fails a click that the
+  // Leaflet map would intercept, so this guards the earlier overlap bug.
+  await expect(page.getByTestId('cluster-map')).toBeVisible();
+  await page.getByRole('combobox').filter({ hasText: 'All provinces' }).click();
+  await page.getByRole('option', { name: 'Sindh' }).click();
+  await expect(table).toContainText('Karachi');
+  await expect(table).not.toContainText('Lahore');
+  await page.getByRole('combobox').filter({ hasText: 'All conditions' }).click();
+  await page.getByRole('option', { name: 'Thalassemia' }).click();
+  await expect(table).toContainText('Thalassemia');
+  await expect(table).not.toContainText('Anemia');
 });

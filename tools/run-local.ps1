@@ -60,6 +60,7 @@ if ($Setup) {
       node scripts/import-fl-history.js $Paillier --scenario iid --base-model $Bundle --completed-at 2026-09-26T15:08:14+05:00
       if ($LASTEXITCODE) { throw 'Paillier run import failed' }
     }
+    node scripts/seed-help-portal.js; if ($LASTEXITCODE) { throw 'Help Portal sample data failed' }
   } finally { Pop-Location }
 }
 
