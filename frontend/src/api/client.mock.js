@@ -203,7 +203,8 @@ const SAMPLE_CLUSTERS = [
   ['Karachi', 'Sindh', 24.86, 67.01, 'anemia', 29, 0], ['Hyderabad', 'Sindh', 25.39, 68.37, 'thalassemia', 12, 0],
   ['Peshawar', 'KPK', 34.01, 71.58, 'leukemia', 4, 3], ['Quetta', 'Balochistan', 30.18, 66.99, 'anemia', 9, 0],
   ['Islamabad', 'Islamabad', 33.68, 73.05, 'thalassemia', 7, 0], ['Gilgit', 'Gilgit-Baltistan', 35.92, 74.31, 'anemia', 5, 0],
-  ['Lahore', 'Punjab', 31.55, 74.34, 'healthy', 60, 0],
+  // One healthy-top result whose leukemia score still crossed the risk threshold.
+  ['Lahore', 'Punjab', 31.55, 74.34, 'healthy', 60, 1],
 ];
 
 function makeClusters() {

@@ -41,6 +41,12 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Emptying the email also empties the password, so a cleared form never
+  // keeps a (possibly autofilled) password behind for the next email.
+  const setEmail = (e) => {
+    const email = e.target.value;
+    setForm((f) => ({ ...f, email, password: email ? f.password : '' }));
+  };
 
   async function submit(e) {
     e.preventDefault();
@@ -99,7 +105,7 @@ export default function LoginPage() {
             )}
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={form.email} onChange={set('email')} required
+              <Input id="email" type="email" value={form.email} onChange={setEmail} required
                      autoComplete="email" />
             </div>
             <div className="space-y-1.5">
