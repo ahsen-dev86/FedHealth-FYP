@@ -511,16 +511,24 @@ async function route(method, path, body) {
   }
 
   // --- Help Portal (public browsing + NGO self-service) ---
+  // The real backend reads both of these straight from the ngos/supply_requests
+  // tables, so a signed-in NGO's own profile and requests are public the moment
+  // they exist (even before its first Save). The mock keeps them in a separate
+  // `myNgo`/`myRequests` pair (see ensureMyNgo below), so it has to fold that
+  // pair in here itself to match.
   if (pathname === '/help/ngos' && method === 'GET') {
     await delay(450);
-    return NGO_DIRECTORY.map((n) => ({
+    const all = myNgo ? [...NGO_DIRECTORY, myNgo] : NGO_DIRECTORY;
+    return all.map((n) => ({
       ...n,
-      open_request_count: SUPPLY_REQUESTS.filter((r) => r.ngo_id === n.id && r.status !== 'closed' && r.status !== 'fulfilled').length,
+      open_request_count: (n.id === 'ngo-me' ? myRequests : SUPPLY_REQUESTS.filter((r) => r.ngo_id === n.id))
+        .filter((r) => r.status !== 'closed' && r.status !== 'fulfilled').length,
     }));
   }
   if (pathname === '/help/requests' && method === 'GET') {
     await delay(450);
-    let rows = SUPPLY_REQUESTS.filter((r) => r.status === 'open' || r.status === 'partially_fulfilled');
+    let rows = [...SUPPLY_REQUESTS, ...myRequests.map((r) => ({ ...r, ngo_name: myNgo?.name, ngo_district: myNgo?.district }))]
+      .filter((r) => r.status === 'open' || r.status === 'partially_fulfilled');
     const category = params.get('category');
     const province = params.get('province');
     const urgency = params.get('urgency');

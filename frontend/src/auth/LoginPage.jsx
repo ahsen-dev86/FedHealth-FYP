@@ -18,7 +18,9 @@ import {
 
 const ROLES = [
   { value: 'doctor', label: 'Doctor' },
-  { value: 'lab_tech', label: 'Lab technician' },
+  // 'lab_tech' removed from registration for now (no use for it yet) — the
+  // backend role and Layout's ROLE_LABELS entry stay, so existing lab_tech
+  // accounts still work; re-add here when it's needed.
   { value: 'nih_official', label: 'Health official (gov email required)' },
   { value: 'ngo', label: 'NGO / foundation' },
 ];

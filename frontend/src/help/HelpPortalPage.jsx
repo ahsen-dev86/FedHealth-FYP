@@ -63,11 +63,13 @@ function NgoCard({ n }) {
             </Badge>
           )}
         </div>
-        <p className="line-clamp-2 text-[13px] text-muted-foreground">{n.mission}</p>
+        {n.mission && <p className="line-clamp-2 text-[13px] text-muted-foreground">{n.mission}</p>}
         <div className="flex items-center justify-between pt-1">
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <MapPin className="size-3.5" /> {n.district}, {n.province}
-          </span>
+          {(n.district || n.province) ? (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <MapPin className="size-3.5" /> {[n.district, n.province].filter(Boolean).join(', ')}
+            </span>
+          ) : <span />}
           {n.open_request_count > 0 && (
             <Badge variant="secondary">{n.open_request_count} open request{n.open_request_count === 1 ? '' : 's'}</Badge>
           )}

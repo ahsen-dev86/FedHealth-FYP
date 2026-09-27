@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Save, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -20,8 +21,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
+import { PROVINCES, DISTRICTS } from '../lib/districts';
 import {
   CATEGORY_LABELS, URGENCY_LABELS, URGENCY_BADGE_CLASS, STATUS_LABELS, formatDate,
+  sanitizePhoneInput, phoneError, emailError, websiteError,
 } from '../lib/help';
 
 const CATEGORIES = ['blood', 'medicine', 'equipment', 'funds', 'other'];
@@ -35,16 +38,45 @@ const DONATION_METHODS = [
 // Editable form for the NGO's own public profile (name, mission, contact,
 // donation methods). Saves via PUT /help/ngos/me — always "my own NGO", no id.
 function ProfileForm({ ngo, onSaved }) {
+  const { user } = useAuth();
   const [form, setForm] = useState(ngo);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  useEffect(() => { setForm(ngo); }, [ngo]);
+  // A brand-new profile has no contact email yet — default it to the account's
+  // login email rather than leaving the field blank (the backend does the same
+  // on first create; this also covers profiles that predate that change).
+  useEffect(() => {
+    setForm({ ...ngo, contact_email: ngo.contact_email || user?.email || '' });
+  }, [ngo, user?.email]);
 
   const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setSaved(false); };
+  const setPhone = (e) => {
+    setForm((f) => ({ ...f, contact_phone: sanitizePhoneInput(e.target.value) }));
+    setSaved(false);
+  };
+  // Changing province clears district unless the current one still belongs to it.
+  const setProvince = (v) => {
+    setForm((f) => ({ ...f, province: v, district: DISTRICTS.some((d) => d.province === v && d.district === f.district) ? f.district : '' }));
+    setSaved(false);
+  };
+  const setDistrict = (v) => { setForm((f) => ({ ...f, district: v })); setSaved(false); };
   const setDonation = (method) => (e) => {
     setForm((f) => ({ ...f, donation_info: { ...f.donation_info, [method]: e.target.value } }));
     setSaved(false);
   };
+
+  const emailErr = emailError(form.contact_email);
+  const phoneErr = phoneError(form.contact_phone);
+  const websiteErr = websiteError(form.website);
+  const hasErrors = !!(emailErr || phoneErr || websiteErr);
+
+  // Districts for the chosen province, plus the current value even if it's
+  // stale (no province yet, or a district outside this fixed list) so saved
+  // data is never silently dropped out of the dropdown.
+  const districtOptions = DISTRICTS.filter((d) => d.province === form.province);
+  if (form.district && !districtOptions.some((d) => d.district === form.district)) {
+    districtOptions.push({ district: form.district, province: form.province });
+  }
 
   async function save() {
     setSaving(true);
@@ -67,39 +99,57 @@ function ProfileForm({ ngo, onSaved }) {
       <CardContent className="space-y-3.5">
         <div className="space-y-1.5">
           <Label htmlFor="ngo-name">Organization name</Label>
-          <Input id="ngo-name" value={form.name || ''} onChange={set('name')} />
+          <Input id="ngo-name" value={form.name || ''} onChange={set('name')} required />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ngo-mission">Mission <span className="font-normal text-muted-foreground">(shown on the directory card)</span></Label>
-          <Input id="ngo-mission" value={form.mission || ''} onChange={set('mission')} placeholder="One sentence describing your cause" />
+          <Input id="ngo-mission" value={form.mission || ''} onChange={set('mission')} placeholder="One sentence describing your cause" maxLength={240} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ngo-description">Full description</Label>
-          <Textarea id="ngo-description" rows={4} value={form.description || ''} onChange={set('description')} />
+          <Textarea id="ngo-description" rows={4} value={form.description || ''} onChange={set('description')} maxLength={4000} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="ngo-district">District</Label>
-            <Input id="ngo-district" value={form.district || ''} onChange={set('district')} />
+            <Label htmlFor="ngo-province">Province</Label>
+            <Select value={form.province || ''} onValueChange={setProvince}>
+              <SelectTrigger id="ngo-province" className="w-full"><SelectValue placeholder="Select province" /></SelectTrigger>
+              <SelectContent>
+                {PROVINCES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ngo-province">Province</Label>
-            <Input id="ngo-province" value={form.province || ''} onChange={set('province')} />
+            <Label htmlFor="ngo-district">District</Label>
+            <Select value={form.district || ''} onValueChange={setDistrict} disabled={!form.province}>
+              <SelectTrigger id="ngo-district" className="w-full">
+                <SelectValue placeholder={form.province ? 'Select district' : 'Select province first'} />
+              </SelectTrigger>
+              <SelectContent>
+                {districtOptions.map((d) => <SelectItem key={d.district} value={d.district}>{d.district}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="ngo-email">Contact email</Label>
-            <Input id="ngo-email" type="email" value={form.contact_email || ''} onChange={set('contact_email')} />
+            <Input id="ngo-email" type="email" value={form.contact_email || ''} onChange={set('contact_email')}
+                   aria-invalid={emailErr ? true : undefined} maxLength={254} />
+            {emailErr && <p className="text-[11px] text-destructive" data-testid="ngo-email-error">{emailErr}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ngo-phone">Contact phone</Label>
-            <Input id="ngo-phone" value={form.contact_phone || ''} onChange={set('contact_phone')} />
+            <Input id="ngo-phone" inputMode="tel" value={form.contact_phone || ''} onChange={setPhone}
+                   aria-invalid={phoneErr ? true : undefined} maxLength={16} placeholder="03XX-XXXXXXX" />
+            {phoneErr && <p className="text-[11px] text-destructive" data-testid="ngo-phone-error">{phoneErr}</p>}
           </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ngo-website">Website</Label>
-          <Input id="ngo-website" value={form.website || ''} onChange={set('website')} placeholder="https://…" />
+          <Input id="ngo-website" value={form.website || ''} onChange={set('website')} placeholder="https://…"
+                 aria-invalid={websiteErr ? true : undefined} maxLength={2048} />
+          {websiteErr && <p className="text-[11px] text-destructive" data-testid="ngo-website-error">{websiteErr}</p>}
         </div>
 
         <div className="pt-1">
@@ -116,7 +166,7 @@ function ProfileForm({ ngo, onSaved }) {
         </div>
 
         <div className="flex items-center gap-3 pt-1.5">
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving || hasErrors}>
             <Save /> {saving ? 'Saving…' : 'Save profile'}
           </Button>
           {saved && <span className="text-xs text-success">Saved.</span>}

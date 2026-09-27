@@ -54,7 +54,7 @@ router.get('/ngos', asyncHandler(async (req, res) => {
 
 router.get('/ngos/me', requireAuth, requirePermission('help:manage_own'),
   asyncHandler(async (req, res) => {
-    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name);
+    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
     res.json(ngo);
   }));
 
@@ -80,14 +80,14 @@ router.put('/ngos/me', requireAuth, requirePermission('help:manage_own'),
   auditAction('NGO_UPDATE_PROFILE', () => ({ type: 'ngo' })),
   asyncHandler(async (req, res) => {
     const data = profileSchema.parse(req.body);
-    await Ngos.getOrCreateForUser(req.user.id, req.user.full_name);
+    await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
     const updated = await Ngos.updateForUser(req.user.id, data);
     res.json(updated);
   }));
 
 router.get('/ngos/me/requests', requireAuth, requirePermission('help:manage_own'),
   asyncHandler(async (req, res) => {
-    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name);
+    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
     res.json(await SupplyRequests.listForNgo(ngo.id));
   }));
 
@@ -95,7 +95,7 @@ router.post('/ngos/me/requests', requireAuth, requirePermission('help:manage_own
   auditAction('NGO_CREATE_REQUEST', (req, res) => ({ type: 'supply_request', id: res.locals.requestId })),
   asyncHandler(async (req, res) => {
     const data = requestSchema.parse(req.body);
-    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name);
+    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
     const created = await SupplyRequests.create(ngo.id, data);
     res.locals.requestId = created.id;
     res.status(201).json(created);
