@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
-const { Client } = require('pg');
+const { Client } = require('pg'); // raw PostgreSQL client (not the app's pool: this runs as the superuser too)
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') }); // PG_SUPERUSER*
 dotenv.config({ path: path.resolve(__dirname, '../.env') });    // PGHOST.. + app PGPASSWORD

@@ -1,5 +1,8 @@
 # fl/server/strategy_paillier.py
 # ---------------------------------------------------------------------------
+# Archived (pre-four-class): part of the earlier Model A federated-learning
+# pipeline, kept under archive/pre_four_class for history.
+#
 # Module 6.4 (encrypted) — the BLIND aggregator.
 #
 # Same FedAvg math as strategy.py, but the server now operates purely on
@@ -16,7 +19,7 @@
 import os
 import sys
 
-import flwr as fl
+import flwr as fl  # flwr (Flower): federated-learning framework; FedAvg is its base averaging strategy
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from common import crypto  # noqa: E402
@@ -28,6 +31,7 @@ from fedhealth_ml import paillier_utils as pu  # noqa: E402
 
 
 def weighted_metric_average(metrics):
+    """Example-count-weighted average of per-lab metrics: metrics is [(num_examples, {metric: value})]."""
     if not metrics:
         return {}
     total = sum(n for n, _ in metrics)
@@ -46,6 +50,7 @@ class PaillierStrategy(fl.server.strategy.FedAvg):
 
     # --- push N to labs so THEY can do the /N after decryption ---------------
     def configure_fit(self, server_round, parameters, client_manager):
+        """Flower callback: build this round's fit instructions, adding the divisor N and round number."""
         instructions = super().configure_fit(server_round, parameters, client_manager)
         for _, fit_ins in instructions:
             fit_ins.config["total_examples"] = self._last_total
@@ -53,6 +58,7 @@ class PaillierStrategy(fl.server.strategy.FedAvg):
         return instructions
 
     def configure_evaluate(self, server_round, parameters, client_manager):
+        """Flower callback: build this round's evaluate instructions, adding the divisor N."""
         instructions = super().configure_evaluate(server_round, parameters, client_manager)
         for _, eval_ins in instructions:
             eval_ins.config["total_examples"] = self._last_total
@@ -60,6 +66,7 @@ class PaillierStrategy(fl.server.strategy.FedAvg):
 
     # --- homomorphic aggregation (no decryption anywhere here) ---------------
     def aggregate_fit(self, server_round, results, failures):
+        """Flower callback: homomorphically sum every lab's ciphertext update (no decryption)."""
         if not results:
             return None, {}
         if failures and not self.accept_failures:

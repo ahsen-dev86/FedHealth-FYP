@@ -24,6 +24,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 
+// Disease classes only; 'healthy' results aren't shown as surveillance clusters.
 const CONDITIONS = CLASSES.filter((c) => c !== 'healthy');
 
 // Screening flags for one condition: results whose top score is that condition.
@@ -58,6 +59,9 @@ export default function SurveillanceDashboard() {
 
   useEffect(() => { loadClusters(); }, [loadClusters]);
 
+  // Clusters actually shown on the map/table: healthy rows dropped, then the
+  // condition filter applied (separately from `rows`, so stats above can still
+  // see all classes for the leukemia flag count).
   const clusters = useMemo(() => rows && rows.filter((c) => c.condition !== 'healthy'
     && (filters.condition === '__all' || c.condition === filters.condition)), [rows, filters.condition]);
 
@@ -138,6 +142,7 @@ export default function SurveillanceDashboard() {
               {clusters == null
                 ? <p className="text-sm text-muted-foreground">Loading map…</p>
                 : <ClusterMap clusters={clusters} mode={mapMode} />}
+              {/* Map legend: one colored dot per condition, plus the risk-flag ring meaning */}
               <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
                 {CONDITIONS.map((c) => (
                   <span key={c}><span style={{ color: conditionColor(c) }}>●</span> {conditionLabel(c)}</span>

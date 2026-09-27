@@ -1,3 +1,5 @@
+// Separator primitive — wraps Base UI's Separator (a purely decorative/ARIA
+// divider line), styled horizontal or vertical via the `orientation` prop.
 import { Separator as SeparatorPrimitive } from "@base-ui/react/separator"
 import { cn } from "cn"
 

@@ -1,5 +1,9 @@
 # ml/fedhealth_ml/rules.py
 # ---------------------------------------------------------------------------
+# Archived (pre-four-class): part of the earlier Model A/Model B pipeline kept
+# for history under archive/pre_four_class. Superseded by the later four-class
+# CBC screening model, but the rule logic below is still explained normally.
+#
 # Interpretable CBC discriminant-index layer for thalassemia-TRAIT screening.
 # This is the "B" half of the thalassemia strategy: a transparent, rule-based
 # flag that runs on the SAME routine CBC indices Model A already uses, so we can
@@ -33,6 +37,7 @@ MICROCYTIC_MCV = 80.0
 
 
 def _get(cbc, key):
+    """Fetch a CBC field by its canonical key, trying each known alias/casing; None if absent/unparseable."""
     for a in _ALIASES[key]:
         if a in cbc and cbc[a] is not None:
             try:

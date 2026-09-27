@@ -10,8 +10,11 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Use the caller's transaction client if given, otherwise the shared pool.
 const run = (db) => (db ? db.query.bind(db) : query);
 
+// Inserts one CBC report. cbc/cbcUnits/cbcReported/symptoms are jsonb columns,
+// so objects are serialized with JSON.stringify before being sent to pg.
 async function create({
   labId = null, createdBy, source, patientRef,
   sex = null, ageYears = null, cbc, cbcUnits = {}, cbcReported = {}, symptoms = {},
@@ -53,6 +56,9 @@ async function listByPatient(patientRef, db = null) {
  */
 async function listByPatientWithPredictions(patientRef, db = null) {
   const { rows } = await run(db)(
+    // Correlated subquery + to_jsonb: pulls just the latest prediction (joined
+    // to ml_models for its name/version) per report as a single nested object,
+    // avoiding a separate round-trip per report for the caller.
     `SELECT lr.*,
             (SELECT to_jsonb(x) FROM (
                 SELECT p.id, p.scores, p.top_condition, p.top_confidence, p.risk_flag,

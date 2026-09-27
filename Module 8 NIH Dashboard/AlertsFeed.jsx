@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { conditionLabel } from '../lib/format';
 
+// Background/border/text colors per alert severity, used to tint each card.
 const SEV_STYLE = {
   critical: { bg: '#FBEEEC', border: '#EEC9C3', text: '#B4453C' },
   high:     { bg: '#FBF3E4', border: '#ECD9AE', text: '#B7791F' },
@@ -13,11 +14,14 @@ const SEV_STYLE = {
   low:      { bg: '#F1F4F3', border: '#E0E7E5', text: '#5A6B68' },
 };
 
+// Renders the status-filtered alert list and lets officials acknowledge open alerts.
 export default function AlertsFeed({ onData }) {
   const [alerts, setAlerts] = useState(null);
   const [status, setStatus] = useState('open');
   const [err, setErr] = useState('');
 
+  // Fetch alerts for the currently selected status and report them to the
+  // parent (used to show an open-alert count badge on the tab).
   const load = useCallback(async () => {
     setErr('');
     try {
@@ -29,6 +33,7 @@ export default function AlertsFeed({ onData }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Mark an alert acknowledged on the backend, then reload the list.
   async function acknowledge(id) {
     try { await api.post(`/nih/alerts/${id}/ack`, {}); await load(); }
     catch (e) { setErr(e.message); }

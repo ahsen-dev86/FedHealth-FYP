@@ -12,12 +12,14 @@
 // 500 (details only in the server log), so internals such as connection
 // strings or SQL never reach the client.
 // ---------------------------------------------------------------------------
-const { ZodError } = require('zod');
+const { ZodError } = require('zod'); // schema validation library; ZodError is thrown on a failed .parse()
 
+/** Wrap an async Express handler so a rejected promise is forwarded to next() (Express doesn't do this itself). */
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
+/** An error that already knows its intended HTTP status (and optional app-specific code). */
 class HttpError extends Error {
   constructor(status, message, code = undefined) {
     super(message);
@@ -34,6 +36,7 @@ function uuidParam(req, res, next, value, name) {
   return next();
 }
 
+/** Turn a ZodError into one human-readable message naming the first failing field. */
 function zodMessage(err) {
   const issue = err.issues[0];
   if (!issue) return 'Validation failed';
@@ -43,6 +46,7 @@ function zodMessage(err) {
   return `${where}${issue.message}`;
 }
 
+// Multer (file-upload middleware) error codes mapped to a status + plain-English message.
 const MULTER = {
   LIMIT_FILE_SIZE: [413, 'The image is larger than 8 MB'],
   LIMIT_FILE_COUNT: [400, 'Upload one report image at a time'],
@@ -51,6 +55,8 @@ const MULTER = {
   LIMIT_FIELD_VALUE: [413, 'A form field is too large'],
 };
 
+// Terminal error middleware: classifies the error (Zod/body-parser/Multer/Postgres/
+// HttpError/unknown) and responds with a matching status + safe message.
 // eslint-disable-next-line no-unused-vars  (Express needs the 4-arg signature)
 function errorHandler(err, req, res, next) {
   if (err instanceof ZodError) {

@@ -1,4 +1,8 @@
 """Four-class screening API; CBC units are part of the request contract."""
+# Module 6 Domain API — Flask service that wraps the trained ANN (Module 3) and
+# exposes it over HTTP as /infer, /normalize, /contract, /models, /health. The
+# Node/Express backend (Module 1-2) calls this service rather than loading the
+# model itself, so the ML runtime stays isolated from the web/auth stack.
 import math
 import os
 import sys
@@ -9,7 +13,7 @@ from pathlib import Path
 # Both settings reproduce the recorded validation results (421/480, log loss
 # 0.35894); oneDNN's different float rounding only moves rare borderline cases.
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify  # Flask: lightweight Python web framework used for this HTTP microservice
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fedhealth_ml import schema
@@ -44,10 +48,12 @@ def _unexpected(err):
 
 
 def _unauthorized():
+    """True if an API key is configured and the request's X-API-Key header doesn't match."""
     return INFERENCE_API_KEY and request.headers.get("X-API-Key") != INFERENCE_API_KEY
 
 
 def _is_number(value):
+    """Strict numeric check for CBC values: real int/float, no bool (bool is an int subclass), must be finite."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
@@ -77,17 +83,20 @@ def _cbc_and_units(body):
 
 
 def _json_number(value):
+    """Coerce a value to a plain JSON-safe float, or None for missing/NaN (JSON has no NaN)."""
     return None if value is None or (isinstance(value, float) and math.isnan(value)) else float(value)
 
 
 @app.get("/health")
 def health():
+    """Liveness/readiness probe: ok only if every configured predictor has usable model artifacts loaded."""
     ready = all(p.mode != "unavailable" for p in PREDICTORS.values())
     return jsonify(ok=ready, service="fedhealth-inference", models={n: p.mode for n, p in PREDICTORS.items()}), 200 if ready else 503
 
 
 @app.get("/models")
 def models():
+    """List configured models with their load mode/version and the feature/unit contract."""
     return jsonify({n: {"mode": p.mode, "version": p.version, "classes": schema.CLASSES,
                        "features": schema.FEATURES, "canonical_units": schema.UNITS} for n, p in PREDICTORS.items()})
 
@@ -122,6 +131,7 @@ def normalize():
 
 @app.post("/infer")
 def infer():
+    """Run the four-class CBC screening model: validate input, normalize units, predict, time it."""
     if _unauthorized():
         return jsonify(error="unauthorized"), 401
     body = request.get_json(silent=True)

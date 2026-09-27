@@ -20,6 +20,7 @@ import paillier_utils as pu  # noqa: E402
 
 
 def main():
+    """CLI entry point: parse --out/--bits, generate the keypair, write public/private JSON files."""
     ap = argparse.ArgumentParser(description="Generate FedHealth Paillier keys")
     ap.add_argument("--out", default="keys")
     ap.add_argument("--bits", type=int, default=2048,

@@ -2,6 +2,8 @@
 // Routing + auth guard. Public: /login, /mfa. Everything else requires a session
 // and renders inside the Layout shell. The index route sends each user to their
 // role's home (doctor -> /doctor; surveillance -> /surveillance, added in Module 8).
+// react-router-dom: client-side routing (BrowserRouter/Routes/Route), plus
+// Navigate for redirects and useLocation to remember where a redirect came from.
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import LoginPage from './auth/LoginPage';
@@ -42,6 +44,8 @@ function NotFound() {
   );
 }
 
+// Root component: provides auth context to the whole tree and declares the
+// route table (public login/mfa routes vs. protected, role-based routes).
 export default function App() {
   return (
     <AuthProvider>

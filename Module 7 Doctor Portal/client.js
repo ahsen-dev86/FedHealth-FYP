@@ -13,6 +13,8 @@ const BASE = import.meta.env.VITE_API_URL || '/api';
 let tokenGetter = () => null;
 export function setTokenGetter(fn) { tokenGetter = fn; }
 
+// Shared response handler: parses JSON (or text) and throws an Error with the
+// server's message + status/data attached when the response isn't ok.
 async function handle(res) {
   const isJson = (res.headers.get('content-type') || '').includes('application/json');
   const data = isJson ? await res.json().catch(() => ({})) : await res.text();
@@ -26,6 +28,8 @@ async function handle(res) {
   return data;
 }
 
+// Builds the Authorization header from the current token (if any), merged
+// with any extra headers the caller needs (e.g. Content-Type).
 function authHeaders(extra = {}) {
   const t = tokenGetter();
   return { ...(t ? { Authorization: `Bearer ${t}` } : {}), ...extra };
@@ -35,6 +39,8 @@ export const api = {
   get: (path) =>
     fetch(`${BASE}${path}`, { headers: authHeaders() }).then(handle),
 
+  // `token` lets callers override the stored session token — used for the
+  // pre-auth token during login/MFA, before a full session token exists.
   post: (path, body, token) =>
     fetch(`${BASE}${path}`, {
       method: 'POST',

@@ -1,3 +1,5 @@
+// Textarea primitive — plain <textarea> (no Radix/Base UI primitive), styled
+// to match Input, and sized to its content via `field-sizing-content`.
 import * as React from "react"
 import { cn } from "cn"
 

@@ -35,6 +35,8 @@ const ROLE_LABELS = {
   admin: 'Administrator',
 };
 
+// Sidebar links, each gated by a permission check (or role) so a user only
+// ever sees the sections their account can actually use.
 const NAV_ITEMS = [
   { to: '/doctor', label: 'Doctor Portal', icon: Stethoscope, show: (can) => can('prediction:create') },
   { to: '/surveillance', label: 'Surveillance', icon: Radar, show: (can) => can('nih:dashboard') },
@@ -43,11 +45,13 @@ const NAV_ITEMS = [
   { to: '/help', label: 'Help Portal', icon: HeartHandshake, show: () => true },
 ];
 
+// Up to two-letter avatar fallback from a full name (or '?' if none).
 function initials(name) {
   if (!name) return '?';
   return name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
 }
 
+// Sidebar + header shell; renders whichever protected page is passed as children.
 export default function Layout({ children }) {
   const { user, can, logout } = useAuth();
   const location = useLocation();

@@ -6,6 +6,8 @@ import { completeMfaSetup, fillExampleReport, OLD_LABELS } from './helpers.js';
 
 // The mock keeps its session in memory, so navigate inside the SPA (sidebar),
 // never with page.goto() after signing in.
+// Logs in and completes MFA setup (mock accounts always need enrolment on
+// first sign-in); password is unchecked by the mock, so any value works.
 async function signIn(page, email) {
   await page.goto('/login');
   await page.fill('#email', email);

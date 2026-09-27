@@ -32,6 +32,8 @@ const DONATION_METHODS = [
   ['bank', 'Bank transfer'], ['jazzcash', 'JazzCash'], ['easypaisa', 'Easypaisa'], ['paypal', 'PayPal'],
 ];
 
+// Editable form for the NGO's own public profile (name, mission, contact,
+// donation methods). Saves via PUT /help/ngos/me — always "my own NGO", no id.
 function ProfileForm({ ngo, onSaved }) {
   const [form, setForm] = useState(ngo);
   const [saving, setSaving] = useState(false);
@@ -127,6 +129,7 @@ function ProfileForm({ ngo, onSaved }) {
   );
 }
 
+// Modal form for posting a new supply request against the caller's own NGO.
 function NewRequestDialog({ onCreated }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -215,6 +218,8 @@ function NewRequestDialog({ onCreated }) {
   );
 }
 
+// Top-level page: loads the caller's NGO profile + its requests, then renders
+// the profile editor next to the request list/creator.
 export default function NgoDashboard() {
   const [ngo, setNgo] = useState(null);
   const [requests, setRequests] = useState(null);
@@ -225,6 +230,7 @@ export default function NgoDashboard() {
     api.get('/help/ngos/me/requests').then(setRequests).catch(() => setRequests([]));
   }, []);
 
+  // Inline status change (e.g. open -> fulfilled) for one of this NGO's requests.
   async function setStatus(id, status) {
     const updated = await api.patch(`/help/ngos/me/requests/${id}`, { status });
     setRequests((rows) => rows.map((r) => (r.id === id ? updated : r)));

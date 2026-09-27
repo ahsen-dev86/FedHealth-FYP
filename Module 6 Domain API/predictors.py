@@ -1,4 +1,8 @@
 """Verified four-class inference. Missing artifacts are explicitly unavailable."""
+# Loads the trained preprocessor + hybrid (ANN+XGBoost) model bundle produced by
+# Module 3/4 and wraps it as the object app.py calls per request. If no verified
+# bundle is present, build_predictor() returns a stub that always fails loudly
+# instead of silently serving an untrained/placeholder model.
 import math
 import os
 from pathlib import Path
@@ -8,16 +12,20 @@ from fedhealth_ml import schema
 from fedhealth_ml.preprocess import normalize_units
 from fedhealth_ml.artifacts import load_bundle
 
+# Demo risk-flagging rule surfaced in every response so callers know it is a
+# configurable screening cutoff, not a clinically validated diagnostic threshold.
 RISK_RULE = "leukemia score >= risk_threshold (configurable demo flag, not a clinical decision threshold)"
 
 
 class UnavailablePredictor:
+    """Placeholder used when no verified model artifacts are found; always raises on predict()."""
     mode, version = "unavailable", "untrained"
     def predict(self, cbc, units):
         raise RuntimeError("Train Module 3 and configure a verified four-class artifact bundle")
 
 
 class HybridPredictor:
+    """Serves the trained ANN+XGBoost hybrid model for the four-class CBC screen."""
     def __init__(self, name, cfg):
         self.prep, self.hybrid, self.meta = load_bundle(cfg["artifact_dir"])
         if self.hybrid.xgb is None:
@@ -29,6 +37,7 @@ class HybridPredictor:
             raise ValueError("RISK_THRESHOLD must be between zero and one")
 
     def predict(self, cbc, units):
+        """Normalize raw CBC values to canonical units, run the model, and shape the full response payload."""
         canonical = normalize_units(cbc, units=units)
         p = self.hybrid.predict_proba(self.prep.transform(canonical))[0]
         scores = {c: float(v) for c, v in zip(schema.CLASSES, p)}
@@ -50,6 +59,7 @@ class HybridPredictor:
 
 
 def build_predictor(name, cfg):
+    """Factory: load the real predictor if its artifact directory exists, else return the unavailable stub."""
     path = Path(cfg["artifact_dir"])
     if not path.exists():
         return UnavailablePredictor()

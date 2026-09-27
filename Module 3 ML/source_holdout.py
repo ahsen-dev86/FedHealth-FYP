@@ -1,4 +1,10 @@
-"""Fresh source-exclusion sensitivity runs; no reuse of an all-source ANN."""
+"""Fresh source-exclusion sensitivity runs; no reuse of an all-source ANN.
+
+For each data source (e.g. a donor dataset), trains a brand-new preprocessor
+and ANN with that source's rows entirely excluded from train/val, then checks
+performance on the held-out source. This estimates how much the model relies
+on any single source, without reusing a model that already saw all sources.
+"""
 import argparse
 from pathlib import Path
 import numpy as np
@@ -12,6 +18,11 @@ from .training import DEFAULT_CSV, DEFAULT_PROVENANCE
 
 
 def run(dataset, output, *, seed=42, epochs=100):
+    """For every distinct provenance source, retrain a fresh preprocessor+ANN
+    (+local XGBoost) excluding that source's rows from train/val, evaluate on
+    the excluded rows, and save each result as its own bundle. A source is
+    skipped ("not estimable") if excluding it would remove an entire class
+    from train or val. Writes source_holdout.json with all per-source reports."""
     import tensorflow as tf
     if dataset.provenance is None:
         raise ValueError("Source holdout requires provenance")
@@ -42,6 +53,7 @@ def run(dataset, output, *, seed=42, epochs=100):
                 "validation_row_ids": val.row_id.tolist(), "training": {"seed": seed, "epochs_max": epochs,
                 "actual_epochs": len(history.history["loss"]), "patience": 10}})
         def score(rows):
+            """Evaluate the held-out source's ANN and hybrid metrics on `rows`."""
             X, y = prep.transform(rows), encode_labels(rows.label)
             return {"ann": evaluate(y, temp.transform(np.asarray(ann(X, training=False))), rows=rows),
                     "hybrid": evaluate(y, hybrid.predict_proba(X), rows=rows)}

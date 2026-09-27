@@ -1,3 +1,7 @@
+// Badge primitive — not built on a Base UI component; uses Base UI's
+// generic `useRender`/`mergeProps` helpers so the badge can render as any
+// element/component via the `render` prop (e.g. render as an <a>). Variant
+// styling (default/secondary/destructive/outline/ghost/link) via cva.
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva } from "class-variance-authority";
@@ -26,6 +30,8 @@ const badgeVariants = cva(
   }
 )
 
+// `render` lets the caller swap the rendered tag/component while keeping the
+// badge's classes and data attributes (defaults to a <span>).
 function Badge({
   className,
   variant = "default",

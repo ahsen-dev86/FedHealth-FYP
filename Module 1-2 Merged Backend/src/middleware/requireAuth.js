@@ -15,6 +15,7 @@ function bearer(req) {
   return type === 'Bearer' && token ? token : null;
 }
 
+/** Express middleware: validate the access token and attach the live user row as req.user. */
 async function requireAuth(req, res, next) {
   try {
     const token = bearer(req);

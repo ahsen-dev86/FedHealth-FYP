@@ -13,6 +13,8 @@ import { Textarea } from '../components/ui/textarea';
 const OCR_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/tiff'];
 const MAX_BYTES = 8 * 1024 * 1024;
 
+// Builds the human-readable status line after an OCR call: how many of the 10
+// values were read, and what still needs the doctor's attention.
 function summary(r) {
   const n = r.extractedCount || 0;
   if (!n) return 'No CBC values could be read. Try a clearer, flatter photo, or enter values manually.';
@@ -25,6 +27,8 @@ function summary(r) {
   return parts.join(' ');
 }
 
+// Two entry points to the same /ocr endpoint: upload an image or paste text.
+// Either way the parent's onExtract(result) merges values into the CBC form.
 export default function OcrUpload({ onExtract }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -33,6 +37,7 @@ export default function OcrUpload({ onExtract }) {
   const [pasting, setPasting] = useState(false);
   const [text, setText] = useState('');
 
+  // Shared request runner for both the file-upload and paste-text flows.
   async function run(request) {
     setBusy(true); setErr(''); setMsg('');
     try {

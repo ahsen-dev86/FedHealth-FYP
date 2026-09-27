@@ -8,11 +8,14 @@ import { api } from '../api/client';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
+// Renders the audit-chain integrity badge plus a table of recent audit entries.
 export default function CompliancePanel() {
   const [chain, setChain] = useState(null);
   const [log, setLog] = useState(null);
   const [err, setErr] = useState('');
 
+  // Two independent fetches on mount: chain verification result, and the
+  // most recent log rows to display below it.
   useEffect(() => {
     api.get('/audit/verify').then(setChain).catch((e) => { setChain({ ok: false }); setErr(e.message); });
     api.get('/audit?limit=50').then(setLog).catch(() => setLog([]));

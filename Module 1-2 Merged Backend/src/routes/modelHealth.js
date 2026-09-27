@@ -15,7 +15,7 @@ const ModelHealth = require('../models/modelHealth');
 
 const router = express.Router();
 const gate = [requireAuth, requirePermission('nih:dashboard')];
-const daysOf = (req) => Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+const daysOf = (req) => Math.min(Math.max(Number(req.query.days) || 30, 1), 365); // clamp ?days= to 1..365, default 30
 
 router.get('/summary', ...gate, asyncHandler(async (req, res) => {
   res.json(await ModelHealth.summary());

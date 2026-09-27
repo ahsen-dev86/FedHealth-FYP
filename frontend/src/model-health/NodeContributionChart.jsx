@@ -3,6 +3,7 @@
 // from settings.train_rows). IID splits are even; the non-IID and by-source
 // splits show the skew the federation had to cope with (e.g. a lab with 2 rows).
 import { useMemo } from 'react';
+// recharts: charting library used for the stacked bar-per-run chart below.
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
@@ -13,6 +14,8 @@ export default function NodeContributionChart({ rows }) {
   const { data, labs, total } = useMemo(() => {
     if (!rows) return { data: [], labs: [], total: null };
     const labIds = [...new Set(rows.map((r) => r.lab_id))].sort();
+    // Pivot the flat rows into one object per run, with each lab's row count
+    // as its own key, so recharts can stack one bar segment per lab.
     const byRun = new Map();
     for (const r of rows) {
       if (!byRun.has(r.run_id)) {
@@ -21,6 +24,8 @@ export default function NodeContributionChart({ rows }) {
       }
       byRun.get(r.run_id)[r.lab_id] = r.train_rows;
     }
+    // Total training rows per run; only surfaced when every run used the same
+    // total (otherwise the per-run totals differ and a single number would mislead).
     const totals = [...byRun.values()].map((d) => labIds.reduce((sum, lab) => sum + (d[lab] || 0), 0));
     return { data: [...byRun.values()], labs: labIds, total: new Set(totals).size === 1 ? totals[0] : null };
   }, [rows]);

@@ -1,5 +1,8 @@
 # fl/run_simulation_paillier.py
 # ---------------------------------------------------------------------------
+# Archived (pre-four-class): part of the earlier Model A federated-learning
+# pipeline, kept under archive/pre_four_class for history.
+#
 # One-command ENCRYPTED federation demo: same as run_simulation.py, but every
 # weight exchange is Paillier-encrypted and the server aggregates over ciphertext
 # without ever decrypting. This is the artifact that demonstrates BOTH privacy
@@ -26,6 +29,7 @@ from fedhealth_ml import paillier_utils as pu  # noqa: E402
 
 
 def main():
+    """CLI entry point: generate keys, partition data, and run the encrypted Flower simulation end to end."""
     ap = argparse.ArgumentParser(description="FedHealth encrypted federated simulation")
     ap.add_argument("--csv", default="anemia_diagnosed_cbc_data_v4.csv")
     ap.add_argument("--labs", type=int, default=3)
@@ -37,7 +41,7 @@ def main():
     ap.add_argument("--preprocessor", default="./fl/preprocessor.joblib")
     args = ap.parse_args()
 
-    import flwr as fl
+    import flwr as fl  # flwr (Flower): federated-learning framework driving the simulation below
     from server.strategy_paillier import PaillierStrategy, weighted_metric_average
     from client.client_paillier import PaillierClient
 

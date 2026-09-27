@@ -15,6 +15,8 @@ import { CBC_FIELDS } from '../lib/format';
 // Sensible defaults to plot; the doctor can switch the index.
 const PLOTTABLE = ['HGB', 'PLT', 'MCV', 'WBC', 'RBC', 'MCH'];
 
+// `reports` are a patient's past CBC reports; renders a line chart of one
+// selectable index (`metric`) over time, plus buttons to switch the index.
 export default function TrendChart({ reports }) {
   const [metric, setMetric] = useState('HGB');
   const unit = CBC_FIELDS.find((f) => f.key === metric)?.unit || '';

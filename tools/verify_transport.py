@@ -18,6 +18,9 @@ from fedhealth_ml.training import DEFAULT_CSV, DEFAULT_PROVENANCE
 from prepare_labs import prepare
 
 
+# Generates a throwaway CA + a server certificate for "localhost", so the FL server/client
+# processes can be smoke-tested talking real TLS instead of the --insecure-dev fallback.
+# Uses the `cryptography` library directly (self-signed, 2-day validity, test-only).
 def certificates(folder):
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -36,11 +39,17 @@ def certificates(folder):
     (folder / "server.key").write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
 
 
+# Launches the real server.py and 3 real client.py processes (separate OS processes, not
+# in-process calls) over an actual TCP socket, optionally with the TLS certs from
+# certificates(), and waits for a complete 2-round FedAvg run to finish. This is the only
+# test that proves the FL transport itself (not just the aggregation logic) works.
 def run(model, output, *, tls=True):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
     model = Path(model).resolve()
     labs = prepare(Dataset(DEFAULT_CSV, DEFAULT_PROVENANCE), model, output / "labs")
+    # Bind port 0 to let the OS pick a free ephemeral port, then release the socket
+    # immediately so the server process can bind to that same port itself.
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]
     address = f"127.0.0.1:{port}"
@@ -51,6 +60,8 @@ def run(model, output, *, tls=True):
         secure_client = ["--ca-cert", str(output / "certs/ca.pem")]
     env = dict(os.environ, PYTHONPATH=str(ROOT), TF_NUM_INTRAOP_THREADS="1", TF_NUM_INTEROP_THREADS="1", TF_CPP_MIN_LOG_LEVEL="2", TF_ENABLE_ONEDNN_OPTS="0")
     processes, logs = [], []
+    # Starts one subprocess (server or a lab client), redirecting its output to a per-
+    # process log file so a failure can be diagnosed after the fact.
     def launch(name, args):
         log = (output / f"{name}.log").open("w", encoding="utf-8")
         logs.append(log)

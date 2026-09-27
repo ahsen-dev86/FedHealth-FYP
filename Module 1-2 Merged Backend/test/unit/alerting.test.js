@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const alerting = require('../../src/services/alerting');
 const { alerting: cfg } = require('../../src/config');
 
+// Stand-in for the pg client: answers the cluster COUNT with a fixed number and records any alert INSERT.
 function fakeDb(clusterCount) {
   const inserts = [];
   return {

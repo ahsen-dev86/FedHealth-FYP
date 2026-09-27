@@ -14,6 +14,8 @@
 // ---------------------------------------------------------------------------
 const crypto = require('crypto');
 
+// Turns a lab's internal record number into the opaque patient_ref stored on
+// lab_reports (see header for why HMAC and why the key matters).
 function derivePatientRef(labInternalRecordNumber, hmacKey = process.env.PATIENT_REF_HMAC_KEY) {
   if (!hmacKey) {
     throw new Error('PATIENT_REF_HMAC_KEY is not set — refusing to derive an unkeyed patient_ref');

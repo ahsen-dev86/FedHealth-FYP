@@ -11,6 +11,7 @@ const { HttpError } = require('./errors');
 const TTL_MS = 60_000; // refresh a role's permission set at most once a minute
 const cache = new Map(); // role_name -> { perms: Set<string>, exp: number }
 
+/** Look up a role's permission codes, serving from the in-memory cache when fresh. */
 async function permsForRole(roleId, roleName) {
   const hit = cache.get(roleName);
   if (hit && hit.exp > Date.now()) return hit.perms;

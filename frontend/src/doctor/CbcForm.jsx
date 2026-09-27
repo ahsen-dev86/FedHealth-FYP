@@ -13,10 +13,14 @@ const UNIT_SELECT = 'h-8 w-full min-w-0 rounded-lg border border-input bg-transp
   + 'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 '
   + 'aria-invalid:border-destructive';
 
+// Trim floating-point noise from converted values (e.g. 9.0099999 -> 9.01) without
+// padding whole numbers with decimals.
 function fmt(x) {
   return Number.isInteger(x) ? String(x) : String(+x.toPrecision(4));
 }
 
+// Renders the 10 CBC input rows (value + unit) with inline validation/conversion
+// feedback. Parent owns the actual cbc/units state; this is a controlled form.
 export default function CbcForm({ cbc, setCbc, units, setUnits, validation, printedUnits = {} }) {
   const setValue = (k) => (e) => setCbc({ ...cbc, [k]: e.target.value });
   const setUnit = (k) => (e) => setUnits({ ...units, [k]: e.target.value });
@@ -29,6 +33,8 @@ export default function CbcForm({ cbc, setCbc, units, setUnits, validation, prin
         const error = validation?.errors?.[f.key];
         const converted = validation?.canonical?.[f.key];
         const printed = printedUnits[f.key];
+        // Only show the "= x canonical unit" hint when a non-canonical unit was
+        // chosen and it converted cleanly — no point restating the same value.
         const showConverted = converted != null && option && option.value !== f.unitOptions[0].value;
         return (
           <div key={f.key} className="space-y-1" data-testid={`cbc-field-${f.key}`}>

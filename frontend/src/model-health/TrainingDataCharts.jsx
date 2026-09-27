@@ -3,6 +3,7 @@
 // Dataset/fedhealth_cbc_4class_provenance.csv, stored at registration): rows per
 // class in each split, and rows per public source and class. The source mix is
 // why unseen-source accuracy is low: several classes come from one source only.
+// recharts: charting library used for the stacked-by-class bar charts below.
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
@@ -11,6 +12,8 @@ import { conditionLabel, conditionColor } from '../lib/format';
 
 const TOOLTIP = { fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' };
 
+// Bar chart with one stacked segment per class, reused for both the
+// per-split and per-source breakdowns (only the x-axis key differs).
 function StackedByClass({ rows, xKey, height = 220 }) {
   return (
     <ResponsiveContainer width="100%" height={height}>

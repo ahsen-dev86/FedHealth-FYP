@@ -1,10 +1,15 @@
-"""Centralized reference training. This module never evaluates test rows."""
+"""Centralized reference training. This module never evaluates test rows.
+
+Entry point for Module 3: fits the shared preprocessor, trains the Module 3
+ANN (+ a local XGBoost head and two classical baselines) on the train split,
+calibrates on validation, and saves a verified bundle. Everything here reports
+validation metrics only — the test split stays untouched until final_evaluate.py."""
 import argparse
 from pathlib import Path
 import joblib
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier  # classical baseline for comparison
+from sklearn.linear_model import LogisticRegression  # classical baseline for comparison
 from . import schema, models
 from .artifacts import save_bundle
 from .data import Dataset, sha256
@@ -18,6 +23,9 @@ DEFAULT_PROVENANCE = ROOT / "Dataset/fedhealth_cbc_4class_provenance.csv"
 
 
 def prepare(dataset, output):
+    """Fit the shared CBCPreprocessor on the training split, save it, and
+    record which exact rows/hashes it was fit from (so later federated runs
+    can verify they are reusing this same fitted preprocessor)."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     prep = CBCPreprocessor().fit(dataset.rows("train")[schema.FEATURES])
@@ -30,6 +38,13 @@ def prepare(dataset, output):
 
 
 def train(dataset, output, *, seed=42, epochs=100, patience=10, trees=300, prepared=None, verbose=2):
+    """Train the centralized reference model: build/train the ANN (early
+    stopping on validation loss), temperature-calibrate it, fit the local
+    XGBoost meta-learner on ANN embeddings, and also fit two classical
+    baselines (logistic regression, random forest) purely for comparison.
+    Saves a verified bundle plus validation metrics/history/settings. Reuses
+    an already-fitted preprocessor from `prepared` if given (checked against
+    this dataset), otherwise fits a fresh one from the training split."""
     import json
     import tensorflow as tf
     if epochs < 1 or patience < 1 or trees < 1:

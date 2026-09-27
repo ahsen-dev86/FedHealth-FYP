@@ -1,4 +1,11 @@
-"""Predeclared validation-only experiment matrix. Never choose the best seed."""
+"""Predeclared validation-only experiment matrix. Never choose the best seed.
+
+Runs the full seed x partition-scenario grid (fixed up front in
+`configurations`) so results are reported for every combination, not
+cherry-picked. For each seed it trains (or reuses) one centralized model, then
+runs every federated partition scenario against it, and finally assembles the
+frozen final_evaluation_plan.json consumed once by final_evaluate.py.
+"""
 import argparse
 import json
 from pathlib import Path
@@ -9,11 +16,17 @@ from run_simulation import run
 
 
 def suite(dataset, root, *, seeds=(42, 52, 62), rounds=20, epochs=100):
+    """Run the predeclared experiment matrix: for each seed, train/reuse a
+    centralized model, then run every (iid / non_iid alpha=.5 / non_iid
+    alpha=.1 / source) federated scenario against it, collecting validation
+    metrics into validation_comparison.json and a hash-locked model list into
+    final_evaluation_plan.json. Refuses to run twice into the same `root`."""
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     plan_file = root / "experiment_plan.json"
     if plan_file.exists():
         raise FileExistsError("Experiment matrix already started; use a new output root")
+    # Each tuple: (experiment name, partition mode, Dirichlet alpha, number of labs).
     configurations = [("iid", "iid", .5, 3), ("non_iid_05", "non_iid", .5, 3),
                       ("non_iid_01", "non_iid", .1, 3), ("source", "source", .5, 5)]
     write_json(plan_file, {"data_sha256": dataset.sha256, "seeds": list(seeds), "rounds": rounds,

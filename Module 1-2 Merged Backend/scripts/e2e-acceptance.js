@@ -42,6 +42,7 @@ function check(label, cond, detail = '') {
 }
 const randomPassword = () => `E2e-${crypto.randomBytes(12).toString('base64url')}`;
 
+/** Fetch wrapper that logs each call (redacting password/code) and returns { status, data }. */
 async function http(method, route, { token, body, raw, base = BASE, headers = {}, quiet = false } = {}) {
   const res = await fetch(`${base}${route}`, {
     method,
@@ -62,6 +63,7 @@ async function http(method, route, { token, body, raw, base = BASE, headers = {}
   return { status: res.status, data };
 }
 
+// Shell out to scripts/totp-code.js so the code is produced the same way a real sign-in would.
 function totp(secret) {
   const r = spawnSync(process.execPath, [path.join(__dirname, 'totp-code.js'), secret], { encoding: 'utf8' });
   return r.stdout.trim();
@@ -93,6 +95,7 @@ async function enrol(role, email) {
   return { token: verify.data.accessToken, email, password, secret };
 }
 
+/** Run a SQL query directly (bypassing the API) and log it plus its rows, for cross-checking API responses. */
 async function sql(db, text, params = []) {
   const { rows } = await db.query(text, params);
   log(`  - SQL \`${text.replace(/\s+/g, ' ').trim()}\``);
@@ -100,6 +103,7 @@ async function sql(db, text, params = []) {
   return rows;
 }
 
+/** Assert a raw INSERT/UPDATE is rejected by a DB CHECK constraint (SQLSTATE 23514), then roll back. */
 async function dbRejects(db, label, text, params) {
   await db.query('BEGIN');
   let code = null;

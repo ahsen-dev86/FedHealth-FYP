@@ -3,7 +3,7 @@
 Module 5's encrypted aggregation is a separate path. This strategy sees the
 plaintext ANN updates and must never be described as a blind server.
 """
-import flwr as fl
+import flwr as fl  # Flower: the federated-learning framework this strategy plugs into
 import numpy as np
 from pathlib import Path
 from flwr.common import ndarrays_to_parameters, parameters_to_ndarrays
@@ -14,7 +14,12 @@ from fedhealth_ml import schema
 
 
 class FedHealthStrategy(fl.server.strategy.FedAvg):
-    """Reject invalid updates and retain an auditable weight fingerprint trace."""
+    """FedAvg subclass (flwr.server.strategy.FedAvg) that layers strict
+    validation and an audit trail on top of plain federated averaging: only
+    accepts updates from the expected labs, verifies each update is built on
+    the current global weights, delegates the actual averaging to
+    aggregation.aggregate_updates, and optionally dumps every round's
+    received/returned/aggregated tensors to disk for later inspection."""
 
     def __init__(self, *, reference_weights, allowed_lab_ids,
                  preprocessor_sha256, expected_train_rows=None,
@@ -38,11 +43,19 @@ class FedHealthStrategy(fl.server.strategy.FedAvg):
         super().__init__(**kwargs)
 
     def fit_config(self, server_round):
+        """Config sent to every client for this round: shared hyperparameters
+        plus the hashes of the current weights/preprocessor, so a client can
+        detect immediately if it received the wrong global state."""
         return {**self.training_config, "server_round": int(server_round),
                 "input_sha256": self.current_weight_sha256,
                 "preprocessor_sha256": self.preprocessor_sha256}
 
     def aggregate_fit(self, server_round, results, failures):
+        """Flower calls this once per round with every client's fit() result.
+        Re-validates and FedAvg-aggregates them via aggregate_updates, updates
+        the strategy's notion of the current global weights, optionally writes
+        an audit .npz of the round's tensors, and returns the new aggregated
+        parameters plus a small metrics dict for logging."""
         if server_round != len(self.round_trace) + 1:
             raise ValueError("Aggregation rounds must be sequential")
         if failures:
@@ -90,6 +103,9 @@ class FedHealthStrategy(fl.server.strategy.FedAvg):
         }
 
     def aggregate_evaluate_counts(self, results):
+        """Pool every lab's local (training-diagnostic) confusion matrix into
+        one summary via aggregation.pooled_confusion_metrics. Registered as
+        Flower's evaluate_metrics_aggregation_fn."""
         return pooled_confusion_metrics(
             results, n_classes=len(schema.MODEL_A_CLASSES),
             allowed_labs=self.allowed_lab_ids,
@@ -98,6 +114,8 @@ class FedHealthStrategy(fl.server.strategy.FedAvg):
         )
 
     def aggregate_evaluate(self, server_round, results, failures):
+        """Reject the round on any client failure or invalid loss before
+        delegating to FedAvg's own aggregate_evaluate for the pooled metrics."""
         if failures:
             raise RuntimeError(f"Evaluation round {server_round} has client failures")
         if not results:

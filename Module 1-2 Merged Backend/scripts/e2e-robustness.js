@@ -15,8 +15,8 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
-const speakeasy = require('speakeasy');
+const jwt = require('jsonwebtoken'); // used here to forge bad/expired tokens the API must reject
+const speakeasy = require('speakeasy'); // TOTP (RFC 6238) library: generates MFA codes for the throwaway accounts
 const { Client } = require('pg');
 
 const BASE = (process.env.E2E_BASE_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '');
@@ -30,6 +30,7 @@ const UN = { WBC: '/mm3', RBC: 'mil/mm3', HGB: 'g/dL', HCT: '%', MCV: 'fl', MCH:
 const PNG = fs.readFileSync(path.join(__dirname, '../test/fixtures/cbc_report.png'));
 const RANDOM_UUID = '3f2b8c1e-9d4a-4c6e-8b7f-1a2b3c4d5e6f';
 
+/** Fetch wrapper that never throws on a non-JSON or network-error response, so a bad request can be graded. */
 async function call(method, route, { token, body, raw, headers = {}, base = BASE, form } = {}) {
   const init = { method, headers: { ...headers } };
   if (token) init.headers.Authorization = token.startsWith('Basic') || token.startsWith('Bearer') ? token : `Bearer ${token}`;
@@ -48,6 +49,7 @@ async function call(method, route, { token, body, raw, headers = {}, base = BASE
   }
 }
 
+/** Register a throwaway account and complete MFA enrolment; returns its access token, email, secret and pre-auth token. */
 async function enrol(role, email) {
   const reg = await call('POST', '/auth/register', { body: { email, password: PASSWORD, fullName: `RB ${role}`, role } });
   if (reg.status !== 201) throw new Error(`register ${role}: ${reg.status} ${reg.data.error}`);
@@ -60,6 +62,7 @@ async function enrol(role, email) {
 
 const rows = [];
 let failures = 0;
+// A row passes only for an expected status, JSON body, and never a 500/network failure — a crash is always a fail.
 function record(area, input, expected, got, extra = '') {
   const ok = (Array.isArray(expected) ? expected : [expected]).includes(got.status)
     && got.status !== 500 && got.status !== 0 && (got.json || got.status === 201 || got.status === 200);

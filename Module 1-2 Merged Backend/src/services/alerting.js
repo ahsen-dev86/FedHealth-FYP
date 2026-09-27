@@ -22,10 +22,11 @@ const { classLabel } = require('../contract');
 const RISK_CONDITION = 'leukemia';
 const CLUSTER_CONDITIONS = ['anemia', 'thalassemia', 'leukemia'];
 
+/** Confidence -> alert severity band. Thresholds are a demo convention (not a clinical scale). */
 function severityFor(confidence) {
   if (confidence >= 0.75) return 'critical';
   if (confidence >= 0.5) return 'high';
-  if (confidence >= 0.3) return 'medium';
+  if (confidence >= 0.3) return 'medium'; // matches the default RISK_THRESHOLD (0.30)
   return 'low';
 }
 

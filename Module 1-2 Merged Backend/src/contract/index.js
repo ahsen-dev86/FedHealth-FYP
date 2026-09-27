@@ -31,6 +31,7 @@ function unitFactor(feature, unit) {
   return factor === undefined ? null : factor;
 }
 
+/** Whether a (already-canonical-unit) value falls within the contract's plausible range for the feature. */
 function inRange(feature, value) {
   const [lo, hi] = RANGES[feature];
   return Number.isFinite(value) && value >= lo && value <= hi;
@@ -71,6 +72,7 @@ function consistencyWarnings(canonical) {
   return warnings;
 }
 
+/** Human-readable label for a class key, falling back to the raw key if unmapped. */
 function classLabel(key) {
   return contract.class_labels[key] || key;
 }

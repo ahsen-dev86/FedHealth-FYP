@@ -28,6 +28,9 @@ const FALLBACK = {
   504: 'The analysis service took too long to answer. Try again.',
 };
 
+// Turn a fetch Response into resolved JSON/text, or throw a normalized Error
+// (with .status/.data) for non-2xx responses; also fires unauthorizedHandler
+// when a 401 comes back for the token that is still the current one.
 async function handle(res, sentToken) {
   const isJson = (res.headers.get('content-type') || '').includes('application/json');
   const data = isJson ? await res.json().catch(() => ({})) : await res.text().catch(() => '');
@@ -45,6 +48,8 @@ async function handle(res, sentToken) {
   return data;
 }
 
+// fetch() + a network-failure fallback (no response at all, e.g. server down)
+// normalized into the same Error shape as handle() produces for HTTP errors.
 function send(path, init, token) {
   return fetch(`${BASE}${path}`, init)
     .catch(() => {
@@ -55,11 +60,15 @@ function send(path, init, token) {
     .then((res) => handle(res, token));
 }
 
+// Adds the bearer token (from tokenGetter) to any extra headers, when present.
 function authHeaders(extra = {}) {
   const t = tokenGetter();
   return { ...(t ? { Authorization: `Bearer ${t}` } : {}), ...extra };
 }
 
+// Factory for the JSON verbs (POST/PUT/PATCH): serializes `body`, sets the
+// JSON content type, and allows a one-off `token` override (used pre-login,
+// e.g. MFA verification, before AuthContext has a stored session token).
 function jsonRequest(method) {
   return (path, body, token) => send(path, {
     method,
@@ -71,6 +80,8 @@ function jsonRequest(method) {
   }, token || tokenGetter());
 }
 
+// Public surface every page component calls; same shape as client.mock.js so
+// swapping the mock in (see vite.config.js) requires no changes to callers.
 export const api = {
   get: (path) => send(path, { headers: authHeaders() }, tokenGetter()),
 

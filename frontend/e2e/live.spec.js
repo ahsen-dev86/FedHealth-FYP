@@ -17,6 +17,8 @@ test.beforeAll(async ({ request }) => {
   test.skip(!up, 'live backend/inference not running (tools/run-local.ps1 -Start)');
 });
 
+// Registers a new doctor through the real UI flow (not the API) and completes
+// MFA enrolment, ending on the Doctor Portal home.
 async function registerDoctorViaUi(page, email) {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Register' }).click();

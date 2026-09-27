@@ -1,3 +1,6 @@
+// Card primitive — plain styled <div>s (no Radix/Base UI primitive behind it);
+// just layout/spacing pieces (header/title/description/action/content/footer)
+// composed together by the caller.
 import * as React from "react"
 import { cn } from "cn"
 

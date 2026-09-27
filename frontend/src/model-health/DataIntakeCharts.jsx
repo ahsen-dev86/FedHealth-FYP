@@ -4,6 +4,7 @@
 // and by the model's highest-scoring class. Where the live data is too thin to
 // chart (fewer than two days, or nothing in the window), the illustrative
 // sample series is shown instead with a visible "Sample data" badge.
+// recharts: charting library used for the intake-over-time area chart.
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -13,6 +14,7 @@ import { sampleIntake } from './sampleData';
 
 const SOURCE_LABELS = { lims: 'LIMS (lab system)', manual: 'Manual entry', ocr: 'OCR scan' };
 
+// Simple horizontal bar-per-row breakdown (used for both "by source" and "by class").
 function BreakdownBars({ rows, labelFor, colorFor }) {
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
@@ -30,6 +32,7 @@ function BreakdownBars({ rows, labelFor, colorFor }) {
   );
 }
 
+// Section heading that appends the "Sample data" badge when illustrative data is shown.
 function Heading({ children, sample }) {
   return (
     <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -42,6 +45,8 @@ export default function DataIntakeCharts({ intake }) {
   if (!intake) return <p className="text-sm text-muted-foreground">Loading intake data…</p>;
   const sample = sampleIntake(intake.days || 30);
   const liveReports = (intake.byDay || []).reduce((s, d) => s + d.count, 0);
+  // Fall back to illustrative data per-section when the live data for that
+  // section is too thin to be meaningful (see file header for the thresholds).
   const trendIsSample = (intake.byDay || []).length < 2;
   const sourceIsSample = !(intake.bySource || []).length;
   const conditionIsSample = !(intake.byCondition || []).length;

@@ -23,6 +23,7 @@ const PROVINCES = ['Punjab', 'Sindh', 'KPK', 'Balochistan', 'Islamabad', 'Gilgit
 const CATEGORIES = ['blood', 'medicine', 'equipment', 'funds', 'other'];
 const URGENCIES = ['critical', 'high', 'medium', 'low'];
 
+// One NGO supply request tile shown in the "Supply requests" tab.
 function RequestCard({ r }) {
   const Icon = CATEGORY_ICONS[r.category];
   return (
@@ -49,6 +50,7 @@ function RequestCard({ r }) {
   );
 }
 
+// One NGO summary tile shown in the "NGO directory" tab.
 function NgoCard({ n }) {
   return (
     <Card>
@@ -78,13 +80,18 @@ function NgoCard({ n }) {
   );
 }
 
+// Public landing page for the Help Portal: tabs between the filterable supply
+// requests board and the NGO directory.
 export default function HelpPortalPage() {
   const [requests, setRequests] = useState(null);
   const [ngos, setNgos] = useState(null);
   const [filters, setFilters] = useState({ category: '__all', province: '__all', urgency: '__all' });
 
+  // NGO directory is fetched once; it doesn't depend on the request filters.
   useEffect(() => { api.get('/help/ngos').then(setNgos).catch(() => setNgos([])); }, []);
 
+  // Requests are re-fetched whenever a filter changes, with the filters sent
+  // as query params so the backend does the filtering.
   useEffect(() => {
     const qs = new URLSearchParams();
     if (filters.category !== '__all') qs.set('category', filters.category);

@@ -10,6 +10,8 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Fetches pre-aggregated surveillance clusters, optionally filtered by
+// province/condition (NULL param = no filter, matches everything).
 async function getClusters({ province = null, condition = null } = {}) {
   const { rows } = await query(
     `SELECT * FROM nih_prediction_clusters

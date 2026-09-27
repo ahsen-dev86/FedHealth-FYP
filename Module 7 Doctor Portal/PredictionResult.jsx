@@ -7,10 +7,14 @@ import ConfidenceScores from '../components/ConfidenceScores';
 import RuleFlag from '../components/RuleFlag';
 import { conditionLabel } from '../lib/format';
 
+// `result` is the /predict response; `onConfirm` persists the doctor's final
+// call. Renders the confidence bars, the thalassemia rule flag, any high-risk
+// alert, and (once a prediction id exists) the confirm-diagnosis controls.
 export default function PredictionResult({ result, onConfirm }) {
   const inf = result?.inference;
   const prediction = result?.prediction;
   const scores = inf?.scores || null;
+  // Rule flag may be nested under inference or, for older payload shapes, at the top level.
   const ruleFlag = inf?.rule_flags?.thalassemia_trait || result?.rule_flags?.thalassemia_trait;
 
   const options = useMemo(() => (scores ? Object.keys(scores) : []), [scores]);
@@ -19,6 +23,8 @@ export default function PredictionResult({ result, onConfirm }) {
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(prediction?.confirmed_condition || null);
 
+  // Sends the doctor-selected condition to the backend, then flips this
+  // panel into its "confirmed" (read-only) state.
   async function confirm() {
     if (!choice || !prediction?.id) return;
     setBusy(true);

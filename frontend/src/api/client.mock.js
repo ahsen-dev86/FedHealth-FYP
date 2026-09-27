@@ -27,12 +27,16 @@ export function setUnauthorizedHandler() { /* mock sessions do not expire */ }
 let session = null; // { fullName, email, role, permissions }
 let pendingMfaSetup = null; // in-flight /auth/mfa/setup promise, see route()
 
+// Demo-only stand-in for real role assignment: infers a role from the login
+// email so different addresses can exercise the doctor/lab/NGO/NIH portals.
 function roleFromEmail(email) {
   if (/nih/i.test(email)) return 'nih_official';
   if (/lab/i.test(email)) return 'lab_tech';
   if (/ngo/i.test(email)) return 'ngo';
   return 'doctor';
 }
+// Mirrors the backend's permission set per role, so `can()` checks in the UI
+// (see AuthContext) behave the same against the mock as against the real API.
 function permsForRole(role) {
   if (role === 'nih_official') return ['nih:dashboard', 'nih:alerts', 'audit:read'];
   if (role === 'ngo') return ['help:manage_own'];
@@ -154,6 +158,10 @@ function startDemoCodeLogging(secretBytes) {
 // they are a deterministic function of the input, and the response says so.
 const MOCK_NOTE = 'Demo mode (mock API): these scores are not produced by the model.';
 
+// Deterministic fake "model": hashes the canonical CBC values into a seed,
+// derives one pseudo-random weight per class from it, then normalizes the
+// weights into scores that sum to 1 — same input always gives the same
+// scores, but they are NOT predictions from the real model (see MOCK_NOTE).
 function hashScores(canonical) {
   let seed = 7;
   for (const f of FEATURES) seed = (seed * 31 + Math.round((canonical[f] ?? 0) * 100)) % 1000003;
@@ -162,15 +170,18 @@ function hashScores(canonical) {
   return Object.fromEntries(CLASSES.map((c, i) => [c, raw[i] / sum]));
 }
 
-let predictionSeq = 1;
-const reportsByPatient = new Map();
+let predictionSeq = 1; // in-memory id counter for mock predictions/reports
+const reportsByPatient = new Map(); // patientRef -> reports created this session
 
+// Builds an Error with a `.status`, matching the shape client.js expects.
 function mockError(status, message) {
   const e = new Error(message);
   e.status = status;
   return e;
 }
 
+// Fabricates a plausible-looking prior visit history (slow anemia-like drift
+// over time) for a patient ref, then appends any reports created this session.
 function makePatientHistory(patientRef) {
   const n = 4 + (patientRef.length % 4);
   const out = [];
@@ -207,6 +218,8 @@ const SAMPLE_CLUSTERS = [
   ['Lahore', 'Punjab', 31.55, 74.34, 'healthy', 60, 1],
 ];
 
+// Converts SAMPLE_CLUSTERS' compact tuples into the full cluster-row objects
+// the Surveillance Dashboard/map expect, with a deterministic avg_confidence.
 function makeClusters() {
   return SAMPLE_CLUSTERS.map(([district, province, lat, lng, condition, cases, highRisk], i) => ({
     district, province, condition, day: new Date().toISOString(), case_count: cases, high_risk_count: highRisk,
@@ -214,6 +227,8 @@ function makeClusters() {
   }));
 }
 
+// Sample NIH alerts (outbreak clusters / high-risk cases), pre-populated so
+// the Surveillance Dashboard's alert feed has something to show in demo mode.
 let alertSeq = 1;
 const ALERTS = [
   { severity: 'high', type: 'outbreak_cluster', condition: 'leukemia', title: 'Possible leukemia cluster in Lahore',
@@ -224,6 +239,7 @@ const ALERTS = [
     description: '4 screening results with thalassemia as the top score in Hyderabad within 7 days (threshold 3).', district: 'Hyderabad' },
 ].map((a, i) => ({ id: alertSeq++, status: 'open', created_at: new Date(Date.now() - (i + 1) * 86400000).toISOString(), ...a }));
 
+// Sample audit-trail rows (who did what, to which resource) for the audit view.
 let auditSeq = 1;
 const AUDIT_LOG = Array.from({ length: 12 }).map((_, i) => ({
   id: auditSeq++,
@@ -331,6 +347,9 @@ let myRequests = [];
 // no live deployment, so intake/prediction counts are the labelled sample series.
 
 // ---- request router ---------------------------------------------------------
+// Stands in for the real HTTP layer: matches `method`+`pathname` against every
+// real API route this frontend calls and returns/throws the same shape the
+// real backend would, so page components never need to know they're mocked.
 async function route(method, path, body) {
   const [pathname, qs] = path.split('?');
   const params = new URLSearchParams(qs || '');
@@ -596,6 +615,8 @@ async function route(method, path, body) {
   throw e;
 }
 
+// Same shape as the real client.js `api` (get/post/put/patch/upload), routed
+// through the in-memory `route()` dispatcher instead of `fetch`.
 export const api = {
   get: (path) => route('GET', path),
   post: (path, body) => route('POST', path, body || {}),

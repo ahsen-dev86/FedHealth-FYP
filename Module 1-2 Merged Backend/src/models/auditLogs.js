@@ -6,6 +6,9 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Records one audit event. metadata is arbitrary structured context (e.g. what
+// changed), stored as jsonb via JSON.stringify; prev_hash/row_hash are filled
+// in by the DB trigger, not here (see header).
 async function append({
   actorUserId = null, actorRole = null, action,
   resourceType = null, resourceId = null,
@@ -23,6 +26,7 @@ async function append({
   return rows[0];
 }
 
+// Paged, most-recent-first view of the audit trail (admin UI).
 async function list({ limit = 100, offset = 0 } = {}) {
   const { rows } = await query(
     `SELECT id, ts, actor_user_id, actor_role, action,

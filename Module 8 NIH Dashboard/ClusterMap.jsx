@@ -19,6 +19,7 @@ import { conditionLabel } from '../lib/format';
 
 const PK_CENTER = [30.3753, 69.3451]; // Pakistan
 
+// Normalize one cluster row's numeric fields (Postgres aggregates arrive as strings).
 function pt(c) {
   return { lat: Number(c.approx_lat), lng: Number(c.approx_lng),
            cases: Number(c.case_count) || 0, highRisk: Number(c.high_risk_count) || 0,

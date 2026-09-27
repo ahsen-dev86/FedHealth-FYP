@@ -79,6 +79,7 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     token, user, loading,
     isAuthed: !!token && !!user,
+    // Permission check used for role-based routing/guards (e.g. 'prediction:create').
     can: (perm) => !!user && user.permissions?.includes(perm),
     login, register, mfaSetup, mfaVerifySetup, mfaVerify, logout,
   }), [token, user, loading, login, register, mfaSetup, mfaVerifySetup, mfaVerify, logout]);

@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+/** Insert a new CBC report; `cbc` is passed straight through as a JS object (-> JSONB). */
 async function create({
   labId = null, createdBy, source, patientRef,
   sex = null, ageYears = null, cbc,
@@ -25,6 +26,7 @@ async function create({
   return rows[0];
 }
 
+/** Fetch a single lab report by its primary key. */
 async function findById(id) {
   const { rows } = await query('SELECT * FROM lab_reports WHERE id = $1', [id]);
   return rows[0] || null;

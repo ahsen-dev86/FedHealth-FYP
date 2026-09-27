@@ -3,7 +3,7 @@
 // with a short-lived pre-auth token (login never yields a full session token —
 // MFA is mandatory, per the backend).
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom'; // client-side routing; useNavigate() pushes to another route in code
 import { AlertCircle } from 'lucide-react';
 import { useAuth, NOTICE_KEY } from './AuthContext';
 import { Card, CardContent } from '../components/ui/card';
@@ -23,6 +23,8 @@ const ROLES = [
   { value: 'ngo', label: 'NGO / foundation' },
 ];
 
+// Combined sign-in / registration form. Either flow ends the same way: navigate
+// to /mfa with a pre-auth token and whether MFA still needs to be set up.
 export default function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
@@ -48,6 +50,8 @@ export default function LoginPage() {
     setForm((f) => ({ ...f, email, password: email ? f.password : '' }));
   };
 
+  // Calls login or register depending on the current mode, then always hands
+  // off to the MFA page (login never returns a full session token by itself).
   async function submit(e) {
     e.preventDefault();
     setError(''); setBusy(true);

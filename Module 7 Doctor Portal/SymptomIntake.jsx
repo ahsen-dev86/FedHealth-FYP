@@ -39,6 +39,8 @@ export default function SymptomIntake({ value, onChange, tags, onParsed }) {
     rec.start();
   }
 
+  // Sends the free-text symptoms to the backend NLP parser and lifts the
+  // resulting canonical tags up via onParsed (does not touch CBC/model data).
   async function recognize() {
     if (!value?.trim()) return;
     setBusy(true);

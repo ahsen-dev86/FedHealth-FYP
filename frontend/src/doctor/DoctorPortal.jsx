@@ -30,10 +30,14 @@ const CANONICAL = Object.fromEntries(FEATURES.map((f) => [f, UNIT_OPTIONS[f][0].
 const NATIVE_SELECT = 'h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm text-foreground outline-none '
   + 'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30';
 
+// Small inline label reminding the doctor that a field (sex/age/district) is
+// stored for context only and never reaches the prediction model.
 function ContextNote() {
   return <span className="font-normal text-muted-foreground">(context, not used by the model)</span>;
 }
 
+// Top-level page for the doctor workflow: collect patient context + CBC (manual
+// or OCR) + symptoms, call /predict, then show the result and history side by side.
 export default function DoctorPortal() {
   const [meta, setMeta] = useState(EMPTY_META);
   const [cbc, setCbc] = useState({});
@@ -67,6 +71,8 @@ export default function DoctorPortal() {
     setShowErrors(true);
   }
 
+  // Validate patient ref, age and every CBC field/unit locally before spending
+  // a round trip on the API; showErrors flips on so field-level messages appear.
   async function predict() {
     setError('');
     setShowErrors(true);
@@ -106,6 +112,8 @@ export default function DoctorPortal() {
     }
   }
 
+  // Records the doctor's authoritative diagnosis against a prior prediction
+  // (passed down to PredictionResult as onConfirm).
   async function confirmDiagnosis(predictionId, condition, notes) {
     await api.post(`/predictions/${predictionId}/confirm`, { confirmedCondition: condition, notes: notes || undefined });
   }

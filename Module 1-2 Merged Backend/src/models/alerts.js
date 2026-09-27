@@ -7,8 +7,12 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Use the transaction client if one was passed in (so an alert can be written
+// atomically alongside the prediction that triggered it), otherwise the shared pool.
 const run = (db) => (db ? db.query.bind(db) : query);
 
+// Raises an alert for a single high-risk prediction result. Type is fixed to
+// 'high_risk_case' so it's always paired with a prediction_id (chk_alert_shape).
 async function createHighRiskCase({
   predictionId, severity = 'high', title, description = '', condition = null,
   district = null, province = null, latitude = null, longitude = null, payload = {},
@@ -17,7 +21,7 @@ async function createHighRiskCase({
     `INSERT INTO alerts (type, prediction_id, severity, title, description, condition,
                          district, province, latitude, longitude, payload)
      VALUES ('high_risk_case', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     RETURNING *`,
+     RETURNING *`, // RETURNING * hands back the full inserted row without a second SELECT
     [predictionId, severity, title, description, condition, district, province, latitude, longitude,
       JSON.stringify(payload)]
   );
@@ -66,6 +70,7 @@ async function list({ status = null, limit = 100 } = {}) {
   return rows;
 }
 
+// Convenience wrapper around list() for callers that filter by a single status.
 async function listByStatus(status, limit = 100) {
   return list({ status, limit });
 }

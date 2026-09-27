@@ -1,8 +1,11 @@
 "use client"
 
+// Tooltip primitive — wraps Base UI's Tooltip (hover/focus delay, positioning,
+// arrow) with the shadcn/ui look.
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 import { cn } from "cn"
 
+// Shares open/close delay behavior across all tooltips rendered beneath it.
 function TooltipProvider({
   delay = 0,
   ...props

@@ -1,5 +1,8 @@
 # fl/common/crypto.py
 # ---------------------------------------------------------------------------
+# Archived (pre-four-class): part of the earlier Model A federated-learning
+# pipeline, kept under archive/pre_four_class for history.
+#
 # Bridge between an "encrypted model" (fedhealth_ml.paillier_utils) and Flower's
 # Parameters transport object. Flower Parameters carry a list of byte tensors; we
 # pack the whole serialized ciphertext model into one tensor tagged 'paillier'.
@@ -7,7 +10,7 @@
 import os
 import sys
 
-from flwr.common import Parameters
+from flwr.common import Parameters  # flwr (Flower): federated-learning framework; Parameters is its weight-transport container
 
 _ML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml"))
 if _ML not in sys.path:

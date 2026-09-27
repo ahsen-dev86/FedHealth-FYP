@@ -1,3 +1,5 @@
+// DropdownMenu primitive — wraps Base UI's Menu (keyboard navigation, submenus,
+// checkbox/radio items, positioning) with the shadcn/ui look.
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { cn } from "cn"
@@ -21,6 +23,7 @@ function DropdownMenuTrigger({
   return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
 }
 
+// Portals the popup out of the DOM flow and positions it relative to the trigger.
 function DropdownMenuContent({
   align = "start",
   alignOffset = 0,
@@ -141,6 +144,7 @@ function DropdownMenuSubContent({
   )
 }
 
+// Menu item with a check indicator that toggles on select; `checked` is controlled by the caller.
 function DropdownMenuCheckboxItem({
   className,
   children,
@@ -184,6 +188,7 @@ function DropdownMenuRadioGroup({
   )
 }
 
+// Mutually-exclusive item within a DropdownMenuRadioGroup; shows a check when selected.
 function DropdownMenuRadioItem({
   className,
   children,

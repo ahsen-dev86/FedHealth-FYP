@@ -16,16 +16,22 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
+// Browser Web Speech API constructor, vendor-prefixed on some browsers; null
+// where unsupported, which hides the dictate button entirely.
 const SR = typeof window !== 'undefined'
   ? (window.SpeechRecognition || window.webkitSpeechRecognition)
   : null;
 
+// Free-text symptom box with optional voice dictation and an NLP "Recognize"
+// call that turns the text into canonical tags for the doctor to review.
 export default function SymptomIntake({ value, onChange, tags, onParsed }) {
   const [lang, setLang] = useState('en-US');
   const [listening, setListening] = useState(false);
   const [busy, setBusy] = useState(false);
   const recognitionRef = useRef(null);
 
+  // Starts/stops the browser's speech recognizer and appends any transcript
+  // to the existing text rather than replacing it.
   function toggleVoice() {
     if (!SR) return;
     if (listening) { recognitionRef.current?.stop(); return; }

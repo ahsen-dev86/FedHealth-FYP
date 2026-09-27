@@ -6,10 +6,12 @@
 import { CLASSES } from '../lib/contract';
 import { conditionLabel, conditionColor, pct } from '../lib/format';
 
+// Renders one horizontal bar per class, sorted highest score first.
 export default function ConfidenceScores({ scores }) {
   if (!scores) {
     return <p className="text-sm text-muted-foreground">No model scores available for this case.</p>;
   }
+  // Only classes actually present in the response are shown, ranked descending.
   const ranked = CLASSES.filter((c) => c in scores).sort((a, b) => scores[b] - scores[a]);
 
   return (

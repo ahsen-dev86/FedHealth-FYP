@@ -16,6 +16,8 @@ const { query } = require('../db/pool');
 const { contract } = require('../contract');
 const { HttpError } = require('../middleware/errors');
 
+// Shared column list/ordering for fl_training_runs, reused by several queries
+// below so they stay in sync instead of drifting apart.
 const RUN_COLUMNS = `t.id, t.scenario, t.seed, t.partition_mode, t.dirichlet_alpha, t.encryption, t.key_bits,
   t.total_rounds, t.labs, t.local_epochs, t.selected_round, t.lab_train_rows, t.runtime,
   t.base_model_version, t.completed_at, t.created_at AS imported_at, t.source_file, t.test_metrics,
@@ -30,6 +32,8 @@ async function activeModel() {
   return rows[0] || null;
 }
 
+// Dashboard headline numbers. Runs the independent aggregate queries in
+// parallel (Promise.all) since none of them depend on each other.
 async function summary() {
   const [model, { rows: predRows }, { rows: reportRows }, { rows: runRows }, { rows: byScheme }] = await Promise.all([
     activeModel(),
@@ -54,6 +58,10 @@ async function summary() {
   };
 }
 
+// One row per federated training run, with its round-0 (centralized starting
+// point), selected (best-by-validation-loss) and final round stats attached
+// via three self-joins against fl_rounds — one per round of interest — so the
+// caller doesn't have to fetch and match rounds itself.
 async function runs() {
   const { rows } = await query(
     `SELECT ${RUN_COLUMNS},
@@ -107,6 +115,8 @@ async function accuracyHistory({ runId = null } = {}) {
 /** FL participants: the lab ids recorded in run settings, with training rows per run. */
 async function nodes() {
   const { rows } = await query(
+    // jsonb_each_text(t.lab_train_rows) unnests the { lab_id: rowCount } JSON
+    // object stored per run into one row per lab, so it can be grouped/aggregated.
     `SELECT l.key AS lab_id,
             COUNT(*)::int AS runs,
             array_agg(DISTINCT t.scenario ORDER BY t.scenario) AS scenarios,
@@ -133,7 +143,11 @@ async function nodeContribution() {
   return rows;
 }
 
-/** Reports and predictions actually stored in this database (live, may be sparse). */
+/**
+ * Reports and predictions actually stored in this database (live, may be
+ * sparse). Breaks the last `days` days down by day, source, predicted
+ * condition, and reporting site.
+ */
 async function dataIntake({ days = 30 } = {}) {
   const window = [days];
   const [{ rows: byDay }, { rows: bySource }, { rows: byCondition }, { rows: bySite }] = await Promise.all([
@@ -161,6 +175,8 @@ async function trainingData() {
   return model ? { model: { name: model.name, version: model.version }, ...model.training_data } : null;
 }
 
+// Current + historical encryption posture of federated training, so the
+// dashboard can show whether updates are being aggregated under Paillier.
 async function encryptionStatus() {
   const [{ rows: [latest] }, { rows: byScheme }, { rows: [encRounds] }, { rows: encryptedRuns }] = await Promise.all([
     query(`SELECT t.encryption, t.key_bits, t.total_rounds, t.labs, t.completed_at, t.scenario, t.seed

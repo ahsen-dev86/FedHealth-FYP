@@ -53,6 +53,7 @@ function parseArgs(argv) {
   return opts;
 }
 
+/** Read one final_test/*_metrics.json (if present) into the shape stored on the run's test_metrics column. */
 function testSummary(file) {
   const payload = readIf(file);
   if (!payload) return null;
@@ -65,6 +66,7 @@ function testSummary(file) {
   };
 }
 
+/** Parse one run directory's settings/round_history/equivalence files and insert its run + per-round rows. */
 async function importRun(runDir, opts) {
   const dir = path.resolve(runDir);
   const settings = readJson(path.join(dir, 'settings.json'));

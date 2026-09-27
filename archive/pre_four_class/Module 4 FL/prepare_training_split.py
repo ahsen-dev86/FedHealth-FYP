@@ -1,9 +1,13 @@
 """Create a raw training-only CSV using Module 3's saved split rules."""
+# Archived (pre-four-class): CLI tool for the earlier Model A pipeline (kept
+# under archive/pre_four_class for history). Re-runs the exact stratified split
+# from Module 3's preprocess.stratified_split (same seed/ratios) so the FL
+# clients (Module 4) only ever see the training rows, never val/test.
 import argparse
 import sys
 from pathlib import Path
 
-import pandas as pd
+import pandas as pd  # pandas: DataFrame-based CSV loading/writing
 
 sys.path.insert(
     0,
@@ -18,7 +22,7 @@ def prepare_training_split(
     output_path,
     seed=42,
 ):
-    """Write raw rows assigned to Module 3's training split."""
+    """Recompute Module 3's train/val/test split and write only the training rows to `output_path`."""
     csv_path = Path(csv_path).expanduser().resolve()
     output_path = Path(output_path).expanduser().resolve()
 
@@ -49,6 +53,8 @@ def prepare_training_split(
         | set(splits["X_test"].index)
     )
 
+    # Safety check: training rows must never overlap the held-out val/test rows,
+    # otherwise the FL clients would be training on data used for evaluation.
     if not set(training_indices).isdisjoint(
         reserved_indices
     ):
@@ -58,6 +64,8 @@ def prepare_training_split(
 
     raw = pd.read_csv(csv_path)
 
+    # Safety check: the split was computed on a possibly-cleaned copy, so make
+    # sure its row indices still line up with the original raw CSV before slicing it.
     if not set(training_indices).issubset(
         set(raw.index)
     ):
@@ -93,6 +101,7 @@ def prepare_training_split(
 
 
 def main():
+    """CLI entry point: parse --csv/--out/--seed and write the training-only CSV."""
     parser = argparse.ArgumentParser(
         description=(
             "Create the Module 3 training-only "

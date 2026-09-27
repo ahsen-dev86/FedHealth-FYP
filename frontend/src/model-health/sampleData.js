@@ -5,6 +5,7 @@
 //     so no FL node reports liveness
 //   * the intake trend while this deployment has fewer than two days of reports
 // Site names are neutral placeholders; no real institution is implied.
+// ISO timestamp `days` ago (86400000 ms = 1 day).
 const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
 
 const SAMPLE_SITES = [
@@ -14,9 +15,11 @@ const SAMPLE_SITES = [
   { name: 'Sample site D', district: 'Peshawar', province: 'KPK', freshnessDays: 45 },
 ];
 
+// Illustrative per-site "live status" rows, derived from each sample site's fixed freshness.
 export function sampleNodeStatus() {
   const now = Date.now();
   return SAMPLE_SITES.map((n, i) => {
+    // Thresholds: reported within a week = up, within a month = stale, else down.
     const status = n.freshnessDays <= 7 ? 'up' : n.freshnessDays <= 30 ? 'stale' : 'down';
     return {
       id: `sample-${i + 1}`, name: n.name, district: n.district, province: n.province,

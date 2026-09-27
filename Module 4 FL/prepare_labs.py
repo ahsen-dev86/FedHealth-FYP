@@ -1,4 +1,10 @@
-"""Offline benchmark setup: export lab-only training shards and server validation."""
+"""Offline benchmark setup: export lab-only training shards and server validation.
+
+Prepares the on-disk inputs for a real (multi-process, gRPC) Flower run: one
+CSV shard per simulated lab, the shared validation CSV for the server, and a
+plan.json recording every hash so client.py/server.py can verify they are all
+using the same partition and model.
+"""
 import argparse
 from pathlib import Path
 from fedhealth_ml.data import Dataset, sha256
@@ -9,6 +15,10 @@ from partition import partition_dataframe
 
 
 def prepare(dataset, model, output, *, labs=3, mode="iid", alpha=.5, seed=42):
+    """Verify the centralized model matches this dataset/seed, partition the
+    training rows across `labs` shards (see partition.partition_dataframe),
+    write each shard + the validation CSV to `output`, and record a plan.json
+    with every file's hash for later verification by client.py/server.py."""
     output, model = Path(output), Path(model)
     meta, _ = inspect_bundle(model, data_sha256=dataset.sha256)
     if meta["origin"] != "centralized" or meta["training"]["seed"] != seed:

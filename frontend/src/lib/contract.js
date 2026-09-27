@@ -112,6 +112,7 @@ export function validateCbc(values = {}, units = {}) {
   return out;
 }
 
+// True when `value` falls inside the feature's plausible canonical range.
 function inRange(feature, value) {
   const [lo, hi] = RANGES[feature];
   return Number.isFinite(value) && value >= lo && value <= hi;
@@ -149,10 +150,13 @@ export function consistencyWarnings(canonical) {
 }
 
 // Patient reference: a pseudonymous token, never a direct identifier (same rules as the API).
+// Allows letters/digits/._:- , up to 128 chars, must start with a letter or digit.
 const PATIENT_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+// Heuristics that catch a real identifier typed in by mistake, so the form can
+// warn instead of silently accepting a de-anonymizing value as the "pseudonym".
 const LOOKS_LIKE_IDENTIFIER = [
-  [/^\d{5}-?\d{7}-?\d$/, 'a CNIC number'],
-  [/^(\+?92|0)3\d{2}-?\d{7}$/, 'a phone number'],
+  [/^\d{5}-?\d{7}-?\d$/, 'a CNIC number'], // Pakistani CNIC: 5-7-1 digits, optional dashes
+  [/^(\+?92|0)3\d{2}-?\d{7}$/, 'a phone number'], // Pakistani mobile number
   [/^\d{10,}$/, 'a long ID/phone number'],
 ];
 

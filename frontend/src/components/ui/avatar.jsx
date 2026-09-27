@@ -1,9 +1,12 @@
 "use client"
 
+// Avatar primitive — wraps Base UI's Avatar (Root/Image/Fallback) and adds a
+// few extra presentational pieces (badge, group) on top for the shadcn/ui look.
 import * as React from "react"
 import { Avatar as AvatarPrimitive } from "@base-ui/react/avatar"
 import { cn } from "cn"
 
+// size: "sm" | "default" | "lg", read via data-size and matching Tailwind selectors.
 function Avatar({
   className,
   size = "default",

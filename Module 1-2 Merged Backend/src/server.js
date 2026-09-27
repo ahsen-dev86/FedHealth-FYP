@@ -25,6 +25,8 @@ async function checkInferenceContract(attempt = 1) {
     if (drift.length) console.error(`[fedhealth] CONTRACT DRIFT with inference service: ${drift.join(', ')}`);
     else console.log(`[fedhealth] inference contract matches (${contract.schema_version})`);
   } catch (e) {
+    // Retry every 5s, up to ~1 minute total (12 attempts). unref() so this
+    // pending timer never keeps the process alive on its own.
     if (attempt < 12) setTimeout(() => checkInferenceContract(attempt + 1), 5000).unref();
     else console.warn(`[fedhealth] inference contract not checked: ${e.message}`);
   }

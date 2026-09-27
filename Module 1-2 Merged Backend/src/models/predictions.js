@@ -10,8 +10,11 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Use the caller's transaction client if given, otherwise the shared pool.
 const run = (db) => (db ? db.query.bind(db) : query);
 
+// Stores one model inference result against its source lab report. scores/
+// ruleFlags/imputedFeatures are jsonb columns, serialized with JSON.stringify.
 async function create({
   labReportId, modelId, scores,
   topCondition = null, topConfidence = null,
@@ -30,6 +33,8 @@ async function create({
   return rows[0];
 }
 
+// JOIN ml_models so the caller gets the model's name/version alongside the
+// prediction without a second lookup (useful for display/audit purposes).
 async function findById(id, db = null) {
   const { rows } = await run(db)(
     `SELECT p.*, m.name AS model_name, m.version AS model_version
@@ -46,6 +51,8 @@ async function listByReport(labReportId, db = null) {
   return rows;
 }
 
+// Records a doctor's confirmed diagnosis over the model's suggestion. The DB
+// trigger check_confirmation_role rejects this if doctorId isn't a doctor/admin.
 async function confirmByDoctor({ predictionId, doctorId, confirmedCondition, notes = null }, db = null) {
   const { rows } = await run(db)(
     `UPDATE predictions

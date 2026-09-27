@@ -1,3 +1,7 @@
+# End-to-end ("integration") tests that exercise the REAL training/FL/inference pipeline
+# (no mocks): saved-model integrity, real multi-lab FedAvg rounds, client reproducibility,
+# the final-report freeze mechanics, and the live inference API — plus a static-analysis
+# guard that training code never touches the held-out test split.
 import json
 from pathlib import Path
 import shutil
@@ -9,6 +13,9 @@ from fedhealth_ml.data import sha256
 from fedhealth_ml import schema
 
 
+# A saved model bundle must load correctly and predict valid probabilities; if its
+# manifest checksum or declared class order is tampered with, load_bundle() must refuse
+# to load it rather than silently serving predictions with the wrong labels.
 @pytest.mark.integration
 def test_saved_hybrid_and_schema_tamper(central_model, tmp_path):
     prep, hybrid, meta = load_bundle(central_model)
@@ -31,6 +38,10 @@ def test_saved_hybrid_and_schema_tamper(central_model, tmp_path):
         load_bundle(corrupt)
 
 
+# Runs a real 3-lab, 2-round federated simulation and checks the recorded audit weights:
+# each round's aggregated weights must equal the row-count-weighted average of what each
+# lab actually returned, and at least one lab's returned weights must differ from what it
+# received (proof real local training happened, not a no-op).
 @pytest.mark.integration
 def test_three_labs_two_rounds_real_fedavg(dataset, central_model, tmp_path):
     from run_simulation import run
@@ -53,6 +64,10 @@ def test_three_labs_two_rounds_real_fedavg(dataset, central_model, tmp_path):
         assert any(not np.array_equal(audit[f"received_{i}"], audit[f"lab-00_returned_{i}"]) for i in range(6))
 
 
+# A lab client's local training run must be exactly reproducible given the same starting
+# weights + config + seed (needed so encrypted vs. plaintext runs can be compared bit-for-
+# bit elsewhere); changing the seed must change the result, and reusing a client across
+# mismatched settings must be rejected.
 @pytest.mark.integration
 def test_fresh_client_optimizer_is_reproducible(dataset, central_model):
     from client import LabClient
@@ -90,6 +105,9 @@ def test_final_phase_freeze_and_once_only_using_validation_fixture(dataset, cent
         final_evaluate(fixture, plan, tmp_path / "second")
 
 
+# Boots the real Module 6 Flask app against a freshly trained (not the official seed-42)
+# bundle to check /health and /infer behave correctly for canonical-unit input and reject
+# malformed requests (missing units, wrong model name, empty body).
 @pytest.mark.integration
 def test_inference_scores_units_and_bad_artifacts(dataset, central_model, tmp_path, monkeypatch):
     import importlib.util
@@ -114,6 +132,10 @@ def test_inference_scores_units_and_bad_artifacts(dataset, central_model, tmp_pa
     assert client.post("/infer", json=[]).status_code == 400
 
 
+# Static-analysis guard (parses the source with `ast`, doesn't run it): training.py must
+# only ever call .xy()/.rows() with "train" or "val", never "test" — the held-out test
+# split must stay untouched until the separate final-evaluation phase. Also checks
+# source_holdout.py fits its own preprocessor fresh rather than reusing a saved bundle.
 def test_test_phase_is_separate_and_source_exclusion_is_fresh():
     import ast
     from fedhealth_ml import training, source_holdout

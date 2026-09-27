@@ -1,4 +1,10 @@
-"""Generate the four manual Colab notebooks from the shared implementation."""
+"""Generate the four manual Colab notebooks from the shared implementation.
+
+This script is a notebook *builder*, not a notebook itself: running it writes
+out 01_eda.ipynb .. 04_federated.ipynb as plain .ipynb JSON files whose cells
+just import and call the real fedhealth_ml/Module 4 code, so training and
+Colab execution always share one implementation instead of duplicated logic.
+"""
 import json
 from pathlib import Path
 import textwrap
@@ -7,13 +13,18 @@ HERE = Path(__file__).resolve().parent
 
 
 def md(text):
+    """Build one markdown notebook cell from a (possibly indented) string."""
     return {"cell_type": "markdown", "metadata": {}, "source": textwrap.dedent(text).strip()}
 
 
 def code(text):
+    """Build one code notebook cell (no cached outputs/execution count)."""
     return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": textwrap.dedent(text).strip()}
 
 
+# Cell shared by all four notebooks: clones the exact branch/commit into Colab
+# (authenticating with a user-supplied GitHub token) and installs pinned deps,
+# so every notebook run starts from an identical, verifiable checkout.
 INSTALL = code('''
     import base64, os, sys, subprocess
     from pathlib import Path
@@ -52,6 +63,8 @@ INSTALL = code('''
     subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-r', str(REPO / 'Module 4 FL/requirements.txt')])
     print('Dependencies installed. Restart the Colab session after the first install, then continue.')
 ''')
+# Mounts Drive (so run artifacts persist across Colab sessions) and loads the
+# canonical dataset via fedhealth_ml.data.Dataset, which re-validates its hash.
 SETUP = code('''
     from pathlib import Path
     import os, sys, json, subprocess
@@ -72,6 +85,7 @@ SETUP = code('''
     print('Commit:', subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
     print('Dataset:', dataset.sha256)
 ''')
+# Standing instructions cell, prepended to every notebook after its title.
 INTRO = md('''
 Run these notebooks in order, one cell at a time. Inspect each result before continuing.
 Use a fresh Colab runtime for the pinned dependencies. CPU is sufficient for this small ANN;
@@ -82,6 +96,8 @@ No model quality result is prefilled or claimed here.
 
 
 def write(name, cells):
+    """Assemble a minimal valid .ipynb (nbformat 4.5) from the given cells and
+    write it next to this script. Cell ids are just their position for stable diffs."""
     notebook = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
         "language_info": {"name": "python"}, "colab": {"name": name}}, "nbformat": 4, "nbformat_minor": 5}
     for i, cell in enumerate(cells):
@@ -89,6 +105,7 @@ def write(name, cells):
     (HERE / name).write_text(json.dumps(notebook, indent=1) + "\n", encoding="utf-8")
 
 
+# Notebook 1: inspect the frozen dataset/provenance before touching any model.
 write("01_eda.ipynb", [md("# 01 Dataset audit and limitations"), INTRO, INSTALL, SETUP,
     code('''
         import pandas as pd
@@ -104,6 +121,8 @@ write("01_eda.ipynb", [md("# 01 Dataset audit and limitations"), INTRO, INSTALL,
     clinical context limit generalization. The old reported RF numbers are not new results.
     This is a screening prototype; it does not diagnose disease or establish clinical safety.
     ''')])
+# Notebook 2: fit the ONE shared preprocessor (imputer+scaler) on train rows,
+# save it, and demonstrate explicit lab unit conversion + the research-only rule audit.
 write("02_preprocess.ipynb", [md("# 02 Fit and save the shared preprocessor"), INTRO, INSTALL, SETUP,
     code('''
         from fedhealth_ml.training import prepare
@@ -119,6 +138,8 @@ write("02_preprocess.ipynb", [md("# 02 Fit and save the shared preprocessor"), I
         from fedhealth_ml.rules import validation_audit
         print(validation_audit(dataset.rows('val')))
     '''), md("The example must produce HCT 38%, HGB 12.4 g/dL and WBC 9.01. Rule flags remain disabled in inference. Labs reuse this preprocessor; they never fit their own.")])
+# Notebook 3: centralized Module 3 training (ANN + local XGBoost head), with
+# the documented hyperparameters and validation-only metrics/plots.
 write("03_train_centralized.ipynb", [md("# 03 Train Module 3 ANN and local XGBoost"), INTRO, INSTALL, SETUP,
     md("ANN: 10 → 64 → 32 → 4; dropout 0.30, L2 0.0001, Adam 0.001, batch 32, at most 100 epochs, validation-loss patience 10. XGBoost: at most 300 trees, depth 4, rate 0.05, validation patience 20. Temperature calibration uses validation only."),
     code('''
@@ -139,6 +160,8 @@ write("03_train_centralized.ipynb", [md("# 03 Train Module 3 ANN and local XGBoo
         plt.plot(history['loss'], label='train'); plt.plot(history['val_loss'], label='validation')
         plt.xlabel('Epoch'); plt.ylabel('Loss'); plt.legend(); plt.show()
     '''), md("Pause here and inspect the results. Test has not been evaluated. Share these validation metrics and curves before changing the protocol. Accuracy alone is insufficient; inspect leukemia recall, all four classes and the ANN versus hybrid comparison.")])
+# Notebook 4: Module 4 federated fine-tuning of the saved ANN (a smoke test,
+# then the fixed multi-seed/multi-partition suite), and the gated final test.
 write("04_federated.ipynb", [md("# 04 Module 4 federation and final evaluation"), INTRO, INSTALL, SETUP,
     md("Module 4 fine-tunes the exact saved ANN. Only ANN weights, counts and metrics are exchanged. The Colab orchestrator simulates public-data labs; it is not a demonstration of patient-data privacy. XGBoost is refit centrally as a reference after ANN selection and is never averaged."),
     code('''

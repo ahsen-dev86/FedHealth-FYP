@@ -52,6 +52,9 @@ NOT_MODEL_INPUTS = ["sex", "ageYears", "symptoms", "district", "province", "lati
                     "collectedAt", "rule_flags"]
 
 
+# Harvests candidate unit strings straight out of normalize_units()'s compiled bytecode
+# constants (__code__.co_consts), so the list of "units that function might accept" is
+# derived from the function itself rather than retyped here (and drifting from it).
 def _candidate_units():
     found = set(schema.UNITS.values())
     for const in preprocess.normalize_units.__code__.co_consts:
@@ -81,6 +84,9 @@ def accepted_units():
         preprocess.clean_ranges = original
 
 
+# Validates and shapes the frontend's per-feature unit dropdown (UNIT_OPTIONS): the first
+# option must be the canonical unit, and every option must be one normalize_units() (via
+# the already-computed `units` table) actually accepts.
 def unit_options(units):
     options = {}
     for feature in schema.FEATURES:
@@ -94,6 +100,8 @@ def unit_options(units):
     return options
 
 
+# Assembles the full contract dict written to both JSON targets: schema facts (features,
+# classes, units, ranges) plus display labels and the derived unit-options table.
 def build():
     units = accepted_units()
     return {
@@ -117,6 +125,8 @@ def render():
     return json.dumps(build(), indent=2, ensure_ascii=False) + "\n"
 
 
+# CLI entry point: writes the contract JSON to both TARGETS, or with --check, exits 1
+# listing any target whose on-disk content is stale (for CI to catch a forgotten re-export).
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true")
