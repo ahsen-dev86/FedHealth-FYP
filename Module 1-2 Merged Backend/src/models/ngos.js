@@ -37,15 +37,19 @@ async function getByUserId(userId) {
   return rows[0] || null;
 }
 
-/** Fetch the caller's NGO profile, creating an empty one on first access. */
-async function getOrCreateForUser(userId, fallbackName) {
+/**
+ * Fetch the caller's NGO profile, creating an empty one on first access.
+ * The new row's contact_email defaults to the account's login email so the
+ * profile form doesn't start with an empty contact field.
+ */
+async function getOrCreateForUser(userId, fallbackName, fallbackEmail) {
   const existing = await getByUserId(userId);
   if (existing) return existing;
   const { rows } = await query(
-    `INSERT INTO ngos (user_id, name) VALUES ($1, $2)
+    `INSERT INTO ngos (user_id, name, contact_email) VALUES ($1, $2, $3)
      ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
      RETURNING *`,
-    [userId, fallbackName || 'New NGO']
+    [userId, fallbackName || 'New NGO', fallbackEmail || null]
   );
   return rows[0];
 }

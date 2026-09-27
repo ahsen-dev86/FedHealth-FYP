@@ -151,3 +151,45 @@ test('NIH: surveillance filters on the model classes only', async ({ page }) => 
   await expect(flags).toContainText('Leukemia flags');
   await expect(flags).toContainText('11');
 });
+
+test('NGO: profile province/district dropdowns, phone/email handling, and directory listing', async ({ page }) => {
+  await signIn(page, 'contact@testngo.org');
+  await expect(page.getByRole('heading', { name: 'My NGO' })).toBeVisible();
+
+  // Contact email defaults to the login email when the profile has none yet.
+  await expect(page.locator('#ngo-email')).toHaveValue('contact@testngo.org');
+
+  // Phone: letters/symbols never make it into the field, and an incomplete
+  // number is flagged; fixing it up to a full Pakistani mobile clears the error.
+  await page.fill('#ngo-phone', 'abc0300xyz123');
+  await expect(page.locator('#ngo-phone')).toHaveValue('0300123');
+  await expect(page.getByTestId('ngo-phone-error')).toBeVisible();
+  await page.fill('#ngo-phone', '0300-1234567');
+  await expect(page.getByTestId('ngo-phone-error')).toHaveCount(0);
+
+  // Province -> district cascades, and a province change clears a district
+  // that no longer belongs to it. Selected by accessible (label) name, since
+  // the district placeholder text ("Select province first") would otherwise
+  // also match a substring filter on the province trigger's own placeholder.
+  const provinceSelect = page.getByRole('combobox', { name: 'Province' });
+  const districtSelect = page.getByRole('combobox', { name: 'District' });
+  await expect(districtSelect).toBeDisabled();
+  await provinceSelect.click();
+  await page.getByRole('option', { name: 'Sindh' }).click();
+  await districtSelect.click();
+  await page.getByRole('option', { name: 'Karachi' }).click();
+  await expect(districtSelect).toContainText('Karachi');
+  await provinceSelect.click();
+  await page.getByRole('option', { name: 'Punjab' }).click();
+  await expect(districtSelect).toContainText('Select district');
+
+  await page.fill('#ngo-name', 'Test Rescue Org');
+  await page.getByRole('button', { name: 'Save profile' }).click();
+  await expect(page.getByText('Saved.')).toBeVisible();
+
+  // The saved profile shows up in the public Help Portal directory (in-app
+  // navigation only — the mock's session lives in memory, see signIn above).
+  await page.getByRole('link', { name: 'Help Portal' }).click();
+  await page.getByRole('tab', { name: 'NGO directory' }).click();
+  await expect(page.getByText('Test Rescue Org')).toBeVisible();
+});
