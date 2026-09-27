@@ -77,13 +77,19 @@ def load_private_key(path):
 
 
 # --- Flatten / unflatten a list-of-layers weight vector ---------------------
+# Paillier only encrypts scalars, so a model (a list of numpy arrays, one per
+# layer) has to be flattened to a single 1-D vector of numbers before
+# encrypting, and reshaped back afterwards using the recorded per-layer shapes.
+
 def _flatten(weights):
+    """List of per-layer numpy arrays -> (flat 1-D float64 vector, list of original shapes)."""
     shapes = [list(w.shape) for w in weights]
     flat = np.concatenate([np.asarray(w, dtype=np.float64).ravel() for w in weights])
     return flat, shapes
 
 
 def _unflatten(flat, shapes):
+    """Inverse of _flatten: slice the flat vector back into per-layer arrays of `shapes`."""
     out, i = [], 0
     for shape in shapes:
         size = int(np.prod(shape)) if shape else 1

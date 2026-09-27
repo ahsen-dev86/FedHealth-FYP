@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # ml/notebooks/_build_notebooks.py
 # Generates the Colab notebooks as valid .ipynb JSON (no nbformat dependency).
+#
+# Archived (pre-four-class): builds the notebooks for the earlier Model A /
+# Model B pipeline (kept under archive/pre_four_class for history); superseded
+# by the later four-class CBC screening model. Running this script regenerates
+# the 01-04 .ipynb files below from the markdown/code cell strings in this file.
 import json, os
 
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -9,6 +14,7 @@ def md(src):   return {"cell_type": "markdown", "metadata": {}, "source": src}
 def code(src): return {"cell_type": "code", "metadata": {}, "execution_count": None,
                        "outputs": [], "source": src}
 
+# Wraps a list of cells into a minimal valid Jupyter notebook document (nbformat 4).
 def notebook(cells):
     return {
         "cells": cells,
@@ -20,6 +26,7 @@ def notebook(cells):
         "nbformat": 4, "nbformat_minor": 5,
     }
 
+# Serializes one notebook to disk next to this script.
 def write(name, cells):
     with open(os.path.join(OUT, name), "w") as f:
         json.dump(notebook(cells), f, indent=1)

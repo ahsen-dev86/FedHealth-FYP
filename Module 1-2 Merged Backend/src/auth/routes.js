@@ -4,7 +4,7 @@
 // the correct pre-auth token scope.
 // ---------------------------------------------------------------------------
 const express = require('express');
-const rateLimit = require('express-rate-limit');
+const rateLimit = require('express-rate-limit'); // per-IP request throttling middleware
 const ctrl = require('./controller');
 const { requirePreAuth } = require('../middleware/requirePreAuth');
 const { requireAuth } = require('../middleware/requireAuth');

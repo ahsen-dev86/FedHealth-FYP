@@ -1,10 +1,19 @@
-"""Identical metrics for centralized, federated and final evaluation."""
+"""Identical metrics for centralized, federated and final evaluation.
+
+One shared metrics implementation so scores are computed the same way whether
+they come from centralized training, a federated round, or the final test —
+avoiding subtly different, non-comparable numbers across the pipeline.
+"""
 import numpy as np
-from sklearn.metrics import confusion_matrix, log_loss
+from sklearn.metrics import confusion_matrix, log_loss  # scikit-learn evaluation utilities
 from . import schema
 
 
 def from_confusion(cm, classes=None):
+    """Turn a 4x4 confusion matrix into accuracy, macro-F1, balanced accuracy,
+    per-class precision/recall/F1/support, and the count of "sick called
+    healthy" errors (any diseased class predicted as class 0/healthy — the
+    costliest mistake for a screening tool)."""
     classes = list(classes or schema.CLASSES)
     cm = np.asarray(cm)
     if cm.shape != (len(classes), len(classes)) or cm.dtype.kind not in "iu" or (cm < 0).any() or not cm.sum():
@@ -21,6 +30,11 @@ def from_confusion(cm, classes=None):
 
 
 def evaluate(y, probabilities, *, rows=None):
+    """Full evaluation from true labels + predicted probability matrix: the
+    from_confusion() metrics, log loss, and 15-bin expected calibration error
+    (ECE — how well predicted confidence matches actual accuracy). If `rows`
+    (with subtype/source columns) is given, also breaks recall down per
+    disease subtype and, recursively, per data source."""
     y, p = np.asarray(y), np.asarray(probabilities, dtype=float)
     if y.dtype.kind not in "iu" or len(y) == 0 or (y < 0).any() or (y >= 4).any():
         raise ValueError("Invalid target labels")
@@ -31,6 +45,8 @@ def evaluate(y, probabilities, *, rows=None):
     out = from_confusion(confusion_matrix(y, pred, labels=range(4)))
     out["log_loss"] = float(log_loss(y, p, labels=range(4)))
     confidence, correct = p.max(axis=1), (pred == y)
+    # ECE: bucket predictions into 15 confidence bins, then weight each bin's
+    # |accuracy - mean confidence| gap by how many predictions fall in it.
     bins = np.minimum((confidence * 15).astype(int), 14)
     out["ece_15_bins"] = float(sum(np.mean(bins == b) * abs(correct[bins == b].mean() - confidence[bins == b].mean()) for b in range(15) if np.any(bins == b)))
     if rows is not None:

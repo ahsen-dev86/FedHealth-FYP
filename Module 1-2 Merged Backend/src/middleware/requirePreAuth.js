@@ -10,6 +10,7 @@ const { HttpError } = require('./errors');
 const { bearer } = require('./requireAuth');
 const Users = require('../models/users');
 
+/** Middleware factory: require a pre-auth token of exactly `expectedScope`, attach user as req.preAuthUser. */
 function requirePreAuth(expectedScope) {
   return async (req, res, next) => {
     try {

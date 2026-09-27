@@ -18,6 +18,7 @@ import {
 
 const DONATION_METHOD_LABELS = { bank: 'Bank transfer', jazzcash: 'JazzCash', easypaisa: 'Easypaisa', paypal: 'PayPal' };
 
+// Fetches and renders a single NGO's public profile by :id from the route.
 export default function NgoProfilePage() {
   const { id } = useParams();
   const [ngo, setNgo] = useState(null);

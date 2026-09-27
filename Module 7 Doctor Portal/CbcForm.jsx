@@ -4,7 +4,11 @@
 // submit. Fields left blank are median-imputed server-side.
 import { CBC_FIELDS } from '../lib/format';
 
+// Renders one labeled input per CBC field. `cbc` is a string-keyed value map
+// and `setCbc` is the parent's setter; this component owns no state itself.
 export default function CbcForm({ cbc, setCbc }) {
+  // Curried change handler: set(key) returns an onChange for that one field,
+  // merging the new value into the existing cbc object.
   const set = (k) => (e) => setCbc({ ...cbc, [k]: e.target.value });
   return (
     <div className="fh-cbc-grid">

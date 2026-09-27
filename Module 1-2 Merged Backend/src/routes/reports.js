@@ -13,7 +13,7 @@
 // so denied (403) attempts are logged as well.
 // ---------------------------------------------------------------------------
 const express = require('express');
-const multer = require('multer');
+const multer = require('multer'); // middleware that parses multipart/form-data uploads (the report image)
 const os = require('os');
 const path = require('path');
 const fs = require('fs');

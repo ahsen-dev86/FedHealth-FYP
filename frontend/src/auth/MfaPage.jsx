@@ -13,6 +13,8 @@ import { Button } from '../components/ui/button';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Separator } from '../components/ui/separator';
 
+// TOTP verification step reached from LoginPage via router state (preAuthToken
+// + mode). Renders the QR-enrolment view or the plain code-entry view.
 export default function MfaPage() {
   const { mfaSetup, mfaVerifySetup, mfaVerify } = useAuth();
   const navigate = useNavigate();
@@ -35,6 +37,8 @@ export default function MfaPage() {
     }
   }, [mode, preAuthToken, mfaSetup]);
 
+  // Verifies the 6-digit TOTP code; which endpoint depends on setup vs. verify
+  // mode. Success stores the full access token and returns to the app.
   async function submit(e) {
     e.preventDefault();
     setError(''); setBusy(true);

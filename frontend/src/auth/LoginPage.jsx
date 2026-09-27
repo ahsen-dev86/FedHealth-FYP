@@ -3,7 +3,7 @@
 // with a short-lived pre-auth token (login never yields a full session token —
 // MFA is mandatory, per the backend).
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom'; // client-side routing; useNavigate() pushes to another route in code
 import { AlertCircle } from 'lucide-react';
 import { useAuth, NOTICE_KEY } from './AuthContext';
 import { Card, CardContent } from '../components/ui/card';
@@ -23,6 +23,8 @@ const ROLES = [
   { value: 'ngo', label: 'NGO / foundation' },
 ];
 
+// Combined sign-in / registration form. Either flow ends the same way: navigate
+// to /mfa with a pre-auth token and whether MFA still needs to be set up.
 export default function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
@@ -41,7 +43,15 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Emptying the email also empties the password, so a cleared form never
+  // keeps a (possibly autofilled) password behind for the next email.
+  const setEmail = (e) => {
+    const email = e.target.value;
+    setForm((f) => ({ ...f, email, password: email ? f.password : '' }));
+  };
 
+  // Calls login or register depending on the current mode, then always hands
+  // off to the MFA page (login never returns a full session token by itself).
   async function submit(e) {
     e.preventDefault();
     setError(''); setBusy(true);
@@ -99,7 +109,7 @@ export default function LoginPage() {
             )}
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={form.email} onChange={set('email')} required
+              <Input id="email" type="email" value={form.email} onChange={setEmail} required
                      autoComplete="email" />
             </div>
             <div className="space-y-1.5">

@@ -16,6 +16,7 @@ const Roles = require('../src/models/roles');
 const password = require('../src/auth/password');
 const { pool } = require('../src/db/pool');
 
+/** Reads admin email/password/name from env vars or CLI args, then creates the admin user. */
 async function main() {
   const email = process.env.ADMIN_EMAIL || process.argv[2];
   const pw = process.env.ADMIN_PASSWORD || process.argv[3];

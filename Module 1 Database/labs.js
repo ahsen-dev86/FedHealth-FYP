@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+/** Register a new lab node. `geom` is derived by Postgres, not passed here. */
 async function create({
   name, limsType = null, district, province,
   latitude, longitude, flClientId = null,
@@ -19,6 +20,7 @@ async function create({
   return rows[0];
 }
 
+/** Fetch a single lab by its primary key. */
 async function findById(id) {
   const { rows } = await query('SELECT * FROM labs WHERE id = $1', [id]);
   return rows[0] || null;
@@ -30,6 +32,7 @@ async function findByFlClientId(flClientId) {
   return rows[0] || null;
 }
 
+/** All labs, grouped/ordered for display on the NIH map + filter dropdowns. */
 async function list() {
   const { rows } = await query(
     'SELECT * FROM labs ORDER BY province, district, name'

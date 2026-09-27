@@ -1,4 +1,11 @@
-"""Persist the selected round with calibration and verified reload."""
+"""Persist the selected round with calibration and verified reload.
+
+Shared finalization step for both the in-memory simulation (run_simulation.py)
+and the real Flower server (server.py): takes the best round the
+ValidationTracker picked, re-calibrates it, optionally refits the local
+XGBoost reference head, and saves it through the same save_bundle() verified-
+reload path used by centralized training.
+"""
 from pathlib import Path
 import numpy as np
 from fedhealth_ml import schema, models
@@ -8,6 +15,11 @@ from aggregation import weights_sha256
 
 
 def finish_run(output, tracker, strategy, prep, initial_meta, model_dir, Xv, yv, settings, *, hybrid_train=None):
+    """Validate that the run completed every expected round, load the
+    tracker's selected (lowest validation-loss, safety-eligible) weights into
+    the ANN, re-calibrate temperature on validation, optionally refit a
+    centralized-reference XGBoost head on top (never itself federated), save
+    the bundle, and write round history/validation metrics/settings JSON."""
     output = Path(output)
     expected = list(range(settings["rounds"] + 1))
     if [m["round"] for m in tracker.history] != expected or len(strategy.round_trace) != settings["rounds"]:

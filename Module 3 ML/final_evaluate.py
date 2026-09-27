@@ -1,9 +1,14 @@
-"""One explicit final test phase after every model/configuration is frozen."""
+"""One explicit final test phase after every model/configuration is frozen.
+
+Runs the held-out test split exactly once, against a pre-declared, hash-locked
+plan of models (produced earlier by run_experiments.suite). This keeps the
+test set from ever being used to pick hyperparameters or compare candidates.
+"""
 import argparse
 import json
 import re
 from pathlib import Path
-import joblib
+import joblib  # loads the pickled scikit-learn baseline estimators
 import numpy as np
 from .artifacts import load_bundle, inspect_bundle
 from .data import Dataset, sha256
@@ -14,6 +19,11 @@ from .training import DEFAULT_CSV, DEFAULT_PROVENANCE
 
 
 def final_evaluate(dataset, plan_path, output):
+    """Evaluate every model listed in a frozen plan on the test split, exactly
+    once. Verifies every checksum in the plan before opening any test row,
+    writes a start-lock file to make repeat/partial runs detectable, then
+    reports ANN/hybrid (and, for the centralized run, baseline) metrics plus
+    a fixed set of documented limitations. Returns the per-model results dict."""
     plan_path, output = Path(plan_path), Path(output)
     plan = json.loads(plan_path.read_text())
     if plan["data_sha256"] != dataset.sha256 or not plan["models"]:
@@ -37,6 +47,7 @@ def final_evaluate(dataset, plan_path, output):
                 if Path(filename).name != filename or sha256(path.parent / filename) != digest:
                     raise ValueError("Frozen baseline changed")
     output.mkdir(parents=True, exist_ok=False)
+    # "x" mode fails if the lock already exists, making a second final-test run on this plan impossible to miss.
     lock = plan_path.parent / "FINAL_TEST_STARTED.json"
     with lock.open("x", encoding="utf-8") as handle:
         json.dump({"plan_sha256": sha256(plan_path), "data_sha256": dataset.sha256}, handle)

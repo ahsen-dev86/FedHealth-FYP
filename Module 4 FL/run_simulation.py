@@ -1,8 +1,16 @@
-"""Memory-bounded sequential Flower simulation; same client/strategy as gRPC."""
+"""Memory-bounded sequential Flower simulation; same client/strategy as gRPC.
+
+Runs an entire federated experiment (partition -> per-round local training ->
+FedAvg aggregation -> global validation) in a single process by calling each
+LabClient and FedHealthStrategy directly, round after round, instead of
+spinning up a real gRPC server/clients. Uses the exact same client and
+strategy code as the real server.py deployment, so simulation results
+transfer to the real deployment.
+"""
 import argparse
 from pathlib import Path
 import numpy as np
-from flwr.common import Code, Status, FitRes, EvaluateRes, ndarrays_to_parameters, parameters_to_ndarrays
+from flwr.common import Code, Status, FitRes, EvaluateRes, ndarrays_to_parameters, parameters_to_ndarrays  # flwr: Flower federated-learning framework's data types
 from fedhealth_ml import schema
 from fedhealth_ml.artifacts import load_bundle
 from fedhealth_ml.data import Dataset, sha256
@@ -18,6 +26,12 @@ from fl_artifacts import finish_run
 
 def run(dataset, model_dir, output, *, rounds=20, labs=3, mode="iid", alpha=.5,
         seed=42, local_epochs=1, lr=.0001, audit=True):
+    """Simulate one full federated run: load and verify the round-zero
+    centralized ANN, partition the training rows into `labs` shards, then for
+    `rounds` rounds have every lab fit locally, aggregate their updates with
+    FedAvg (FedHealthStrategy), and evaluate the new global weights on the
+    held-out validation split (ValidationTracker). Finishes by saving the
+    tracker's selected round through finish_run(). Returns the saved model path."""
     if rounds < 1:
         raise ValueError("At least one federated round is required")
     model_dir, output = Path(model_dir), Path(output)
@@ -44,18 +58,19 @@ def run(dataset, model_dir, output, *, rounds=20, labs=3, mode="iid", alpha=.5,
         training_config={"seed": seed, "local_epochs": local_epochs, "batch_size": 32, "lr": lr},
         min_evaluate_clients=labs, min_available_clients=labs, accept_failures=False,
         audit_dir=output / "audit_weights" if audit else None)
-    tracker.evaluate(0, weights, {})
+    tracker.evaluate(0, weights, {})  # round zero: validate the untouched centralized ANN as the baseline
     diagnostics = []
     ok = Status(code=Code.OK, message="")
     for round_number in range(1, rounds + 1):
         results = []
         config = strategy.fit_config(round_number)
         for client in clients:
+            # Every lab trains locally on the same global weights, wrapped as a Flower FitRes like a real client would return.
             updated, count, metrics = client.fit(weights, config)
             results.append((None, FitRes(status=ok, parameters=ndarrays_to_parameters(updated), num_examples=count, metrics=metrics)))
-        params, _ = strategy.aggregate_fit(round_number, results, [])
+        params, _ = strategy.aggregate_fit(round_number, results, [])  # FedAvg across all labs' updates
         weights = parameters_to_ndarrays(params)
-        tracker.evaluate(round_number, weights, {})
+        tracker.evaluate(round_number, weights, {})  # global held-out validation of the newly aggregated weights
         evaluations = []
         for client in clients:
             loss, count, metrics = client.evaluate(weights, {})

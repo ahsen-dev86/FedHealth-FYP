@@ -12,6 +12,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 const COLUMNS = ['HGB', 'MCV', 'PLT', 'WBC'];
 
+// Fetches and renders one patient's report history (trend chart + visit table).
+// Re-fetches whenever patientRef changes (parent also bumps a key after a new
+// prediction to force a fresh load).
 export default function PatientHistory({ patientRef }) {
   const [reports, setReports] = useState(null);
   const [err, setErr] = useState('');

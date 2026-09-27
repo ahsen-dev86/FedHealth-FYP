@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+/** Raise a new alert; `payload` is arbitrary extra context stored as JSONB. */
 async function create({
   type, severity, title, description = '',
   condition = null, district = null, province = null,
@@ -35,6 +36,7 @@ async function list({ status = null, limit = 100 } = {}) {
   return rows;
 }
 
+/** Mark an alert acknowledged by a specific NIH official. */
 async function acknowledge({ alertId, userId }) {
   const { rows } = await query(
     `UPDATE alerts

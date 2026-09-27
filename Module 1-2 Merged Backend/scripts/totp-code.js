@@ -6,7 +6,7 @@
 //
 //   node scripts/totp-code.js <base32-secret>
 // ---------------------------------------------------------------------------
-const speakeasy = require('speakeasy');
+const speakeasy = require('speakeasy'); // TOTP (RFC 6238) library: same algorithm an authenticator app uses
 
 const secret = process.argv[2];
 if (!secret) {

@@ -1,4 +1,11 @@
-"""Lab-local training with a fresh optimizer at each round."""
+"""Lab-local training with a fresh optimizer at each round.
+
+Simulates one hospital lab's Flower client: holds only that lab's local CBC
+shard in memory, receives the current global ANN weights each round, trains
+locally for a few epochs with a freshly re-initialized optimizer, and returns
+the updated weights (never the raw patient data) plus a signed metrics dict
+the server/aggregation code can verify.
+"""
 import argparse
 import json
 from pathlib import Path
@@ -13,6 +20,10 @@ from fedhealth_ml.runtime import seed_all
 
 
 class LabClient:
+    """One simulated lab. Wraps a local CBC dataframe, keeps it preprocessed
+    with the shared (never locally refit) preprocessor, and implements the
+    Flower fit/evaluate contract (via as_flower_client below)."""
+
     def __init__(self, lab_id, frame, preprocessor, *, units, architecture,
                  preprocessor_sha256, seed=42, local_epochs=1, batch_size=32, lr=.0001):
         if not re.fullmatch(r"lab-[0-9]+", lab_id):
@@ -26,9 +37,17 @@ class LabClient:
         self.X = preprocessor.transform(raw)
 
     def get_parameters(self, config):
+        """Clients never originate weights — round zero must always be the
+        verified centralized Module 3 ANN supplied by the server."""
         raise RuntimeError("Server must supply the verified Module 3 ANN")
 
     def fit(self, parameters, config):
+        """One local training round: verify the round/preprocessor/weights and
+        training-hyperparameter config match the server's protocol exactly,
+        rebuild the model fresh (clearing the Keras session so no state leaks
+        between rounds/labs), train `local_epochs` epochs with a brand-new
+        Adam optimizer, and return the updated weights, example count, and a
+        metrics dict carrying hashes the server uses to detect tampering."""
         import tensorflow as tf
         round_number = int(config["server_round"])
         if round_number < 1 or config["preprocessor_sha256"] != self.preprocessor_sha256:
@@ -39,9 +58,10 @@ class LabClient:
         if any(config.get(key) != value for key, value in settings.items()):
             raise ValueError("Client settings differ from the server protocol")
         tf.keras.backend.clear_session()
+        # Seed varies by lab and round so labs don't train on identically-shuffled batches, while staying reproducible.
         seed_all(self.seed + int(self.lab_id[4:]) + 1009 * round_number)
-        model = task.get_model(lr=self.lr, architecture=self.architecture)
-        model.set_weights(parameters)
+        model = task.get_model(lr=self.lr, architecture=self.architecture)  # fresh model + fresh Adam optimizer each round
+        model.set_weights(parameters)  # ...then loaded with the current global weights
         ds = models.array_dataset(self.X, self.y, self.batch_size, shuffle=True, seed=self.seed + round_number)
         model.fit(ds, epochs=self.local_epochs, verbose=0, shuffle=False)
         returned = model.get_weights()
@@ -68,6 +88,8 @@ class LabClient:
 
 
 def as_flower_client(client):
+    """Wrap a LabClient in Flower's NumPyClient interface (flwr: the Flower
+    federated-learning framework) so it can be handed to fl.client.start_client below."""
     import flwr as fl
     class Adapter(fl.client.NumPyClient):
         def get_parameters(self, config): return client.get_parameters(config)
@@ -77,6 +99,10 @@ def as_flower_client(client):
 
 
 def main():
+    """CLI entry point: load the verified model bundle, build a LabClient over
+    a CSV shard, then connect to a real Flower gRPC server (used for the
+    separate-process deployment; the in-memory simulation instead constructs
+    LabClient directly in run_simulation.py)."""
     import pandas as pd
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--server", default="127.0.0.1:8080")

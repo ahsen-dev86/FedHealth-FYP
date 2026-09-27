@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { CLASSES } from '../lib/contract';
 import { conditionLabel, conditionColor, pct1 } from '../lib/format';
 
+// Small label/value pair used for the model's fact grid (architecture, calibration, etc.).
 function Fact({ label, children }) {
   return (
     <div>
@@ -23,6 +24,8 @@ export default function ModelCard({ model }) {
   const m = model.metrics || {};
   const p = model.provenance || {};
   const perClass = m.per_class || {};
+  // Only show the measured metrics table/summary when the registry actually
+  // recorded results on the frozen test split (vs. an unmeasured registration).
   const measured = m.split === 'test';
 
   return (

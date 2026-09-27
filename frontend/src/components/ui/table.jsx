@@ -1,5 +1,7 @@
 "use client"
 
+// Table primitive — plain styled HTML table elements (no Radix/Base UI
+// primitive); Table itself also wraps the <table> in a scrollable container.
 import * as React from "react"
 import { cn } from "cn"
 

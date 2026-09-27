@@ -1,3 +1,6 @@
+# Tests for the (plaintext) FL aggregation guards: correct FedAvg arithmetic, rejection of
+# malformed/inconsistent lab updates, pooled metrics computed over raw confusion counts
+# (not an average of per-lab scores), and the validation tracker that picks the best round.
 import copy
 import json
 import numpy as np
@@ -6,6 +9,8 @@ from aggregation import aggregate_updates, weights_sha256, pooled_confusion_metr
 from validation import ValidationTracker
 
 
+# Builds 3 labs' fake weight updates (each lab's weights are shifted by a different
+# constant) plus the aggregate_updates() kwargs describing what a valid round looks like.
 def fixture_updates():
     weights = [np.zeros((2, 2), dtype="float32"), np.ones(2, dtype="float32")]
     counts = {"lab-00": 2, "lab-01": 5, "lab-02": 9}
@@ -19,6 +24,8 @@ def fixture_updates():
     return updates, kwargs
 
 
+# FedAvg must weight each lab's contribution by its row count (not average unweighted),
+# so the aggregated result should equal sum(weights * count) / total_count exactly.
 def test_unequal_counts_fedavg_arithmetic():
     updates, kwargs = fixture_updates()
     actual, trace = aggregate_updates(updates, **kwargs)
@@ -28,6 +35,11 @@ def test_unequal_counts_fedavg_arithmetic():
     assert trace["total_examples"] == 16
 
 
+# Each `case` corrupts exactly one field of the first lab's update (unregistered/duplicate
+# lab id, a lab dropped entirely, a wrong or non-integer row count, a row count that
+# disagrees with what the lab itself reported, mismatched preprocessor/start/returned
+# checksums, a wrong weight shape/dtype, or a NaN/Inf value) — aggregate_updates() must
+# reject every one of them instead of silently including bad data in the average.
 @pytest.mark.parametrize("case", ["unknown", "duplicate", "missing", "count", "bool", "reported", "prep", "start", "returned", "shape", "dtype", "nan", "inf"])
 def test_reject_bad_updates(case):
     updates, kwargs = fixture_updates()
@@ -50,6 +62,10 @@ def test_reject_bad_updates(case):
         aggregate_updates(updates, **kwargs)
 
 
+# Pooled metrics must be computed from the SUM of every lab's confusion matrix, not by
+# averaging each lab's own accuracy/F1 — the latter would misrepresent labs with very
+# different sample sizes. Also checks that a lab reporting an inconsistent example count
+# vs. confusion-matrix total is rejected.
 def test_pooled_counts_not_average_of_client_f1():
     results = [(2, {"lab_id": "a", "preprocessor_sha256": "p", "confusion_matrix": json.dumps([[1, 0], [1, 0]])}),
                (8, {"lab_id": "b", "preprocessor_sha256": "p", "confusion_matrix": json.dumps([[0, 0], [0, 8]])})]
@@ -61,11 +77,17 @@ def test_pooled_counts_not_average_of_client_f1():
         pooled_confusion_metrics(results, n_classes=2, allowed_labs=["a", "b"], preprocessor_sha256="p")
 
 
+# Minimal stand-in for a Keras model: set_weights() stores the "prediction" to return,
+# so tests can control exactly what each evaluated round predicts.
 class Model:
     def set_weights(self, weights): self.p = weights[0]
     def __call__(self, X, training=False): return self.p
 
 
+# ValidationTracker must accept round 0 (the untrained/initial model) as a valid baseline,
+# only update "best round" when a later round actually improves on it, still allow a worse
+# round to be recorded without becoming best, enforce sequential round numbers, and detect
+# when the same round number is evaluated twice with different weights (a bug elsewhere).
 def test_round_zero_eligibility_and_late_selection():
     tracker = ValidationTracker(Model(), np.zeros((4, 10)), np.arange(4), n_classes=4)
     p = np.full((4, 4), .1, dtype="float32"); np.fill_diagonal(p, .7)

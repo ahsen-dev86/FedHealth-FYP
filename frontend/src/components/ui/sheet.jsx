@@ -1,5 +1,8 @@
 "use client"
 
+// Sheet primitive — a slide-in panel built on the same Base UI Dialog as
+// dialog.jsx, just aliased/styled differently (anchored to an edge via `side`
+// instead of centered) to render as a drawer.
 import * as React from "react"
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
 import { cn } from "cn"
@@ -47,6 +50,7 @@ function SheetOverlay({
   )
 }
 
+// `side` (top/right/bottom/left) picks which edge the panel slides in from.
 function SheetContent({
   className,
   children,

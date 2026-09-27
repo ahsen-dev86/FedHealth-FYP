@@ -10,6 +10,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { conditionLabel, conditionColor } from '../lib/format';
 
+// Tailwind classes per alert severity: card background/border, then text color.
 const SEV_VARIANT = {
   critical: 'border-destructive/30 bg-destructive/10',
   high: 'border-warning/30 bg-warning/10',
@@ -23,11 +24,14 @@ const SEV_TEXT = {
   low: 'text-muted-foreground',
 };
 
+// Renders the status-filtered alert list and lets officials acknowledge open alerts.
 export default function AlertsFeed({ onData }) {
   const [alerts, setAlerts] = useState(null);
   const [status, setStatus] = useState('open');
   const [err, setErr] = useState('');
 
+  // Fetch alerts for the currently selected status and report them to the
+  // parent (used to show an open-alert count badge on the tab).
   const load = useCallback(async () => {
     setErr('');
     try {
@@ -39,6 +43,7 @@ export default function AlertsFeed({ onData }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Mark an alert acknowledged on the backend, then reload the list.
   async function acknowledge(id) {
     try { await api.post(`/nih/alerts/${id}/ack`, {}); await load(); }
     catch (e) { setErr(e.message); }
@@ -66,6 +71,7 @@ export default function AlertsFeed({ onData }) {
                 <div className="mt-0.5 text-[13px] text-muted-foreground">{a.description}</div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <Badge variant="outline" className="capitalize">{a.type.replace(/_/g, ' ')}</Badge>
+                  {/* Condition badge: colored dot + label, only when the alert names a condition */}
                   {a.condition && (
                     <Badge variant="outline" className="gap-1">
                       <span className="size-2 rounded-full" style={{ background: conditionColor(a.condition) }} />

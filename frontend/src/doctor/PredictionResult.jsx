@@ -22,11 +22,16 @@ export const DEFAULT_DISCLAIMER = 'Screening support only, not a diagnosis. The 
   + 'sex, age, symptoms and location are stored for context and are not model inputs. '
   + 'A doctor must confirm any condition.';
 
+// Maps backend field names to the plain-language labels used in the
+// "not used by the model" list below (longitude is folded into "location").
 const CONTEXT_LABELS = {
   sex: 'sex', ageYears: 'age', symptoms: 'symptoms', district: 'district', province: 'province',
   latitude: 'location', longitude: null, collectedAt: 'collection date', rule_flags: 'rule flags',
 };
 
+// Renders one /predict response: confidence bars, model metadata, data-quality
+// warnings, the (currently always-empty) research rule flags, NIH alerts raised,
+// and the doctor's confirm-diagnosis control.
 export default function PredictionResult({ result, onConfirm }) {
   const inf = result?.inference;
   const prediction = result?.prediction;
@@ -44,6 +49,8 @@ export default function PredictionResult({ result, onConfirm }) {
   const [err, setErr] = useState('');
   const [confirmed, setConfirmed] = useState(prediction?.confirmed_condition || null);
 
+  // Sends the doctor's chosen condition (may differ from the model's top score)
+  // to the parent, which persists it as the authoritative diagnosis.
   async function confirm() {
     if (!choice || !prediction?.id) return;
     setBusy(true); setErr('');

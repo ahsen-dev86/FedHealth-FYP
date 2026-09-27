@@ -1,4 +1,12 @@
-"""Pure, testable validation and arithmetic for plaintext ANN FedAvg."""
+"""Pure, testable validation and arithmetic for plaintext ANN FedAvg.
+
+Framework-independent core of the federated averaging (FedAvg) step: hashing
+weight tensors for integrity checks, validating each lab's returned update
+before trusting it, computing the example-count-weighted average of ANN
+weights across labs, and pooling per-lab confusion matrices into one report.
+Kept separate from Flower/strategy.py so this logic can be unit-tested without
+a live federation.
+"""
 import hashlib
 import json
 
@@ -6,6 +14,9 @@ import numpy as np
 
 
 def weights_sha256(layers):
+    """Deterministic fingerprint of a list of weight tensors (shape+dtype+
+    bytes of each layer), used everywhere to prove two parties are talking
+    about the exact same set of weights without re-sending them."""
     digest = hashlib.sha256()
     for layer in layers:
         array = np.asarray(layer)
@@ -61,6 +72,9 @@ def aggregate_updates(updates, reference_weights, allowed_labs, *,
         raise ValueError("One or more configured labs are missing")
     total = sum(count for _, _, count, _ in checked)
     result = []
+    # FedAvg: each lab's layer is weighted by its number of training examples
+    # (labs with more data influence the average proportionally more), summed
+    # in float64 for precision, then cast back to the model's original dtype.
     for index, expected in enumerate(reference_weights):
         weighted = sum(layer[index].astype(np.float64) * count
                        for _, layer, count, _ in checked)

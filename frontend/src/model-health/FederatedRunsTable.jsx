@@ -7,8 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../components/ui/badge';
 import { pct1 } from '../lib/format';
 
+// Format a loss value to 3 decimals, or an em dash when it isn't available.
 const f3 = (x) => (x == null ? '—' : x.toFixed(3));
 
+// One row per imported federated run, comparing round-0/selected/final validation loss.
 export default function FederatedRunsTable({ runs }) {
   if (!runs) return <p className="text-sm text-muted-foreground">Loading runs…</p>;
   if (runs.length === 0) return <p className="text-sm text-muted-foreground">No federated run has been imported yet.</p>;

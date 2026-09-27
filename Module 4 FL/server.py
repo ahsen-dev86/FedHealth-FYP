@@ -1,9 +1,15 @@
-"""Separate-process Flower coordinator. Receives no lab training records."""
+"""Separate-process Flower coordinator. Receives no lab training records.
+
+Real multi-process deployment of the Module 4 server: starts a Flower gRPC
+server (optionally over TLS) that only ever exchanges ANN weights and metrics
+with lab client processes (client.py) — it holds the global validation set
+and the FedHealthStrategy, but never sees any lab's raw CBC rows.
+"""
 import argparse
 import json
 from pathlib import Path
 import pandas as pd
-import flwr as fl
+import flwr as fl  # Flower: the federated-learning framework providing the gRPC server/strategy runtime
 from flwr.common import ndarrays_to_parameters
 from fedhealth_ml.artifacts import load_bundle
 from fedhealth_ml.data import sha256, validate_frame
@@ -15,6 +21,10 @@ from fl_artifacts import finish_run
 
 
 def main():
+    """CLI entry point: verify the model/plan/validation-file hashes agree,
+    then start a real Flower server bound to `--bind`, coordinating
+    `--rounds` rounds of FedAvg with the labs that connect (started
+    separately via client.py), and finally save the selected round."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bind", default="127.0.0.1:8080")
     ap.add_argument("--model", type=Path, required=True)
@@ -32,6 +42,8 @@ def main():
     args = ap.parse_args()
     if args.rounds < 1:
         ap.error("--rounds must be positive")
+    # Require either all three TLS files (secure gRPC) or an explicit opt-in to
+    # plaintext (--insecure-dev), never a partial or mixed configuration.
     cert_paths = [args.ca_cert, args.server_cert, args.server_key]
     if any(cert_paths) and (not all(cert_paths) or args.insecure_dev):
         ap.error("Supply all three TLS files; do not combine TLS and insecure mode")

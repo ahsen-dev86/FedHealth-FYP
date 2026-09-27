@@ -1,3 +1,5 @@
+// Label primitive — plain <label> (no Radix/Base UI primitive), styled to grey
+// out automatically when a sibling/peer form control is disabled.
 import * as React from "react"
 import { cn } from "cn"
 

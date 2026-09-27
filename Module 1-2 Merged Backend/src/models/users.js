@@ -8,6 +8,9 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Inserts a new user row; the gov-domain check for NIH officials and any
+// email/role constraints are enforced by DB triggers/CHECKs, not here.
+// RETURNING * gives back the generated id and defaulted columns in one call.
 async function create({
   email, fullName, roleId,
   organization = null, labId = null, passwordHash = null,
@@ -21,6 +24,8 @@ async function create({
   return rows[0];
 }
 
+// Used by login; JOINs roles so the caller gets role_name for RBAC checks
+// without a second query.
 async function findByEmail(email) {
   const { rows } = await query(
     `SELECT u.*, r.name AS role_name
@@ -57,6 +62,9 @@ async function setStatus(id, status) {
   await query('UPDATE users SET status = $2 WHERE id = $1', [id, status]);
 }
 
+// Bumps the failed-attempt counter and, once it reaches lockThreshold, sets
+// locked_until lockMinutes into the future in the same statement (CASE WHEN);
+// an already-locked account's lockout isn't extended by further attempts.
 async function recordFailedLogin(id, lockThreshold = 5, lockMinutes = 15) {
   const { rows } = await query(
     `UPDATE users

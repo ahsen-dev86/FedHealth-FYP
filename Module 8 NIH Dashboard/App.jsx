@@ -43,6 +43,8 @@ function NotFound() {
   );
 }
 
+// Top-level route table: public auth routes, an index redirect by role, and
+// the protected app pages (doctor portal, NIH surveillance dashboard).
 export default function App() {
   return (
     <AuthProvider>

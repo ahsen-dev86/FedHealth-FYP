@@ -13,6 +13,7 @@ const { inference } = require('../config');
 const { HttpError } = require('../middleware/errors');
 const { CLASSES, FEATURES } = require('../contract');
 
+// JSON headers, plus the shared API key only when one is configured.
 function headers() {
   return {
     'Content-Type': 'application/json',
@@ -20,6 +21,7 @@ function headers() {
   };
 }
 
+/** Call the inference service with an abort-based timeout, then map its status per the header note above. */
 async function call(pathname, { method = 'GET', body } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), inference.timeoutMs);

@@ -6,6 +6,8 @@
 import { FlaskConical } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
+// Renders any research-only rule flags, if present; renders nothing otherwise
+// (which is always, today, since inference disables these rules).
 export default function RuleFlag({ flags }) {
   const entries = Object.entries(flags || {});
   if (entries.length === 0) return null;

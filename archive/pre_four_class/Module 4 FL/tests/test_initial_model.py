@@ -1,10 +1,14 @@
+# Archived (pre-four-class): unit tests for the earlier Module 4 FL client's
+# task.load_initial_model, kept under archive/pre_four_class for history.
+# Verifies that a saved Module 3 Keras model is only accepted as the federated
+# round-zero model when its shapes exactly match what Flower expects.
 import sys
 import unittest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-import numpy as np
+import numpy as np  # numpy: builds the fake weight arrays used in these tests
 
 MODULE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MODULE_DIR))
@@ -23,6 +27,7 @@ import task  # noqa: E402
 
 
 class FakeModel:
+    """Minimal stand-in for a Keras model exposing just the shape/weight API load_initial_model uses."""
     def __init__(self, input_shape=(None, 14), output_shape=(None, 9),
                  weights=None):
         self.input_shape = input_shape
@@ -40,6 +45,7 @@ class FakeModel:
 
 
 def fake_tensorflow(loaded_model):
+    """Fake `tensorflow` module whose keras.models.load_model(...) just returns `loaded_model`."""
     return SimpleNamespace(
         keras=SimpleNamespace(
             models=SimpleNamespace(
@@ -51,6 +57,7 @@ def fake_tensorflow(loaded_model):
 
 class InitialModelTests(unittest.TestCase):
     def load(self, loaded_model, expected_model=None):
+        """Call task.load_initial_model with tensorflow/get_model mocked out, returning `loaded_model`."""
         expected_model = expected_model or FakeModel()
         with (
             patch.dict(sys.modules, {"tensorflow": fake_tensorflow(loaded_model)}),

@@ -1,3 +1,6 @@
+// Tabs primitive — wraps Base UI's Tabs (Root/List/Tab/Panel, keyboard nav)
+// with the shadcn/ui look; list styling has a "default" (pill) and "line"
+// (underline) variant via cva.
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs"
 import { cva } from "class-variance-authority";
 import { cn } from "cn"

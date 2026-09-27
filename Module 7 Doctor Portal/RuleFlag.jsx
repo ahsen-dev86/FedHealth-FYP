@@ -4,12 +4,14 @@
 // opinion (Mentzer index etc.), shown as a clinical note — never a diagnosis.
 import { useState } from 'react';
 
+// `flag` is the rule-engine output for one patient: whether the discriminant
+// screen was applicable (e.g. enough CBC fields present) and whether it fired.
 export default function RuleFlag({ flag }) {
   const [open, setOpen] = useState(false);
   if (!flag) return null;
 
-  const applicable = flag.applicable;
-  const fired = flag.flag;
+  const applicable = flag.applicable; // whether enough CBC values were present to run the screen
+  const fired = flag.flag; // whether the rule actually triggered (suggests trait)
   const cls = fired ? 'fh-flag fh-flag--warn' : 'fh-flag fh-flag--ok';
   const titleCls = fired ? 'fh-flag__title fh-flag__title--warn' : 'fh-flag__title';
 

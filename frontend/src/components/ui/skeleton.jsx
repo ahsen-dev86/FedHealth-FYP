@@ -1,3 +1,4 @@
+// Skeleton primitive — plain pulsing placeholder <div> used while content loads.
 import { cn } from "cn"
 
 function Skeleton({

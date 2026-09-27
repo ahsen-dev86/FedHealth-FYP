@@ -31,11 +31,13 @@ async function create({
   return rows[0];
 }
 
+/** Fetch a single prediction by its primary key. */
 async function findById(id) {
   const { rows } = await query('SELECT * FROM predictions WHERE id = $1', [id]);
   return rows[0] || null;
 }
 
+/** All predictions ever run against one lab report, newest first. */
 async function listByReport(labReportId) {
   const { rows } = await query(
     'SELECT * FROM predictions WHERE lab_report_id = $1 ORDER BY created_at DESC',

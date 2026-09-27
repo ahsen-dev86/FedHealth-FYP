@@ -7,7 +7,7 @@
 //   node scripts/demo-code.js doctor     # one account: doctor | nih | admin
 const fs = require('fs');
 const path = require('path');
-const speakeasy = require('speakeasy');
+const speakeasy = require('speakeasy'); // TOTP (RFC 6238) library: computes the current 6-digit code
 
 const FILE = path.resolve(__dirname, '../../run-results/demo-accounts.txt');
 if (!fs.existsSync(FILE)) {

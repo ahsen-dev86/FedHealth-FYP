@@ -6,6 +6,8 @@ import { completeMfaSetup, fillExampleReport, OLD_LABELS } from './helpers.js';
 
 // The mock keeps its session in memory, so navigate inside the SPA (sidebar),
 // never with page.goto() after signing in.
+// Logs in and completes MFA setup (mock accounts always need enrolment on
+// first sign-in); password is unchecked by the mock, so any value works.
 async function signIn(page, email) {
   await page.goto('/login');
   await page.fill('#email', email);
@@ -13,6 +15,16 @@ async function signIn(page, email) {
   await page.getByRole('button', { name: 'Sign in' }).click();
   await completeMfaSetup(page);
 }
+
+test('login: clearing the email also clears the password', async ({ page }) => {
+  await page.goto('/login');
+  await page.fill('#email', 'doctor@fedhealth.demo');
+  await page.fill('#password', 'mock-password-123');
+  await page.fill('#email', 'doctor2@fedhealth.demo'); // editing keeps it
+  await expect(page.locator('#password')).toHaveValue('mock-password-123');
+  await page.fill('#email', '');
+  await expect(page.locator('#password')).toHaveValue('');
+});
 
 test('doctor: 10 CBC fields with units, four-class result and disclaimer', async ({ page }) => {
   await signIn(page, 'doctor@fedhealth.demo');
@@ -110,6 +122,11 @@ test('NIH: surveillance filters on the model classes only', async ({ page }) => 
   await expect(table).toContainText('Thalassemia');
   await expect(table).not.toContainText('Healthy');
   await expect(page.locator('body')).not.toContainText(OLD_LABELS);
+  const flags = page.getByTestId('stat-flags');
+  // 145 non-healthy results + 1 leukemia risk flag on a healthy-top result.
+  await expect(page.getByTestId('stat-cases')).toContainText('145');
+  await expect(flags).toContainText('Total disease flags');
+  await expect(flags).toContainText('146');
 
   // The filter dropdowns open above the map: Playwright fails a click that the
   // Leaflet map would intercept, so this guards the earlier overlap bug.
@@ -122,4 +139,15 @@ test('NIH: surveillance filters on the model classes only', async ({ page }) => 
   await page.getByRole('option', { name: 'Thalassemia' }).click();
   await expect(table).toContainText('Thalassemia');
   await expect(table).not.toContainText('Anemia');
+  await expect(flags).toContainText('Thalassemia flags');
+  await expect(flags).toContainText('30');
+
+  // Leukemia flags = leukemia-top results (10) + the risk flag on another class.
+  await page.getByRole('combobox').filter({ hasText: 'Sindh' }).click();
+  await page.getByRole('option', { name: 'All provinces' }).click();
+  await page.getByRole('combobox').filter({ hasText: 'Thalassemia' }).click();
+  await page.getByRole('option', { name: 'Leukemia' }).click();
+  await expect(page.getByTestId('stat-cases')).toContainText('10');
+  await expect(flags).toContainText('Leukemia flags');
+  await expect(flags).toContainText('11');
 });

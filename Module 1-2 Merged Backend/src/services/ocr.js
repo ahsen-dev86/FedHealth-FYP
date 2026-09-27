@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 const fs = require('fs');
 const { execFile } = require('child_process');
-const sharp = require('sharp');
+const sharp = require('sharp'); // image processing lib: used below to resize/grayscale/contrast a scan before OCR
 const { HttpError } = require('../middleware/errors');
 const { ocr: ocrConfig } = require('../config');
 const { FEATURES, unitFactor, inRange, normalizeUnit } = require('../contract');
@@ -76,6 +76,7 @@ async function preprocess(inputPath) {
   return out;
 }
 
+/** Run the tesseract OCR engine on one prepared image and resolve its raw recognized text. */
 function runTesseract(imagePath, lang) {
   return new Promise((resolve, reject) => {
     // execFile with an argument list: no shell, so nothing from the request reaches a command line.

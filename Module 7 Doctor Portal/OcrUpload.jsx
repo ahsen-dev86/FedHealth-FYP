@@ -5,6 +5,8 @@
 import { useRef, useState } from 'react';
 import { api } from '../api/client';
 
+// Hidden file input + button that uploads an image and reports back extracted
+// CBC values via `onExtract`; the actual OCR/parsing happens server-side.
 export default function OcrUpload({ onExtract }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -27,6 +29,7 @@ export default function OcrUpload({ onExtract }) {
       setErr(ex.message);
     } finally {
       setBusy(false);
+      // Reset the input value so selecting the *same* file again still fires onChange.
       if (inputRef.current) inputRef.current.value = '';
     }
   }

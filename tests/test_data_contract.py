@@ -1,3 +1,6 @@
+# Contract tests for the dataset itself: exact row counts, checksum stability, leakage/
+# label-conflict detection, preprocessing statistics, unit normalization and lab
+# partitioning. These guard the ML data pipeline (fedhealth_ml), not the API layer.
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,6 +10,9 @@ from fedhealth_ml.preprocess import CBCPreprocessor, normalize_units, encode_lab
 from partition import partition_dataframe
 
 
+# Pins the released dataset's shape, split sizes and imputed-row count so a change to
+# build_dataset.py (or the source CSVs) is caught immediately rather than silently
+# shifting downstream model results.
 def test_release_counts_and_metadata(dataset):
     assert dataset.frame.shape == (3200, 14)
     assert [len(dataset.rows(s)) for s in ["train", "val", "test"]] == [2240, 480, 480]
@@ -15,6 +21,9 @@ def test_release_counts_and_metadata(dataset):
     assert dataset.provenance.row_id.tolist() == dataset.frame.row_id.tolist()
 
 
+# The dataset's sha256 is used as an integrity fingerprint elsewhere (e.g. model
+# metadata); it must be stable across a Windows/Unix line-ending round trip, so the
+# hash is computed over a canonicalized (LF-normalized) byte stream.
 def test_line_endings_do_not_change_release(dataset, tmp_path):
     path = tmp_path / "windows.csv"
     path.write_bytes(dataset.path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
@@ -22,6 +31,9 @@ def test_line_endings_do_not_change_release(dataset, tmp_path):
     assert Dataset(path).sha256 == dataset.sha256
 
 
+# validate_frame() must catch train/val leakage (an identical feature row copied across
+# splits) and rows that share features but disagree on label, both of which would
+# silently corrupt evaluation if left in the dataset.
 def test_reject_duplicate_leakage_and_conflicting_labels(dataset):
     df = dataset.frame.copy()
     a = df.index[df.split == "train"][0]
@@ -36,6 +48,10 @@ def test_reject_duplicate_leakage_and_conflicting_labels(dataset):
         validate_frame(df)
 
 
+# CBCPreprocessor must fit its scaler ONLY on the train split (never leaking val/test
+# statistics), must handle a request with missing features (RDW/NEUTp), must be
+# re-loadable from disk with identical behavior, and must refuse a second fit() since
+# the fitted scaler is meant to be immutable once trained.
 def test_only_train_statistics_and_inference_missing_features(dataset, tmp_path):
     train = dataset.rows("train")
     prep = CBCPreprocessor().fit(train)
@@ -54,6 +70,9 @@ def test_only_train_statistics_and_inference_missing_features(dataset, tmp_path)
         prep.fit(changed)
 
 
+# Unit conversion must be explicit: normalize_units() converts several real-world unit
+# spellings to the model's canonical units, but refuses to guess a unit that was never
+# declared and refuses a value that ends up outside the plausible range after conversion.
 def test_explicit_unit_conversion_and_no_guessing():
     result = normalize_units({"HCT": .38, "WBC": 9010, "HGB": 124, "RBC": 4470000},
         units={"HCT": "fraction", "WBC": "/mm³", "HGB": "g/L", "RBC": "/uL"})
@@ -83,6 +102,10 @@ def test_report_style_unit_strings_are_accepted():
         normalize_units({"HGB": 7.7}, units={"HGB": "mmol/L"})
 
 
+# Federated-learning partitioning must, for every mode (iid / non_iid at two skew levels /
+# by-source), cover every training row exactly once, be reproducible for a fixed seed, and
+# refuse to partition anything other than the train split (val/test must never be split
+# across simulated labs).
 @pytest.mark.parametrize("mode,alpha,labs", [("iid", .5, 3), ("non_iid", .5, 3), ("non_iid", .1, 3), ("source", .5, 5)])
 def test_partitions_exact_coverage_reproducible_train_only(dataset, mode, alpha, labs):
     kwargs = dict(num_labs=labs, mode=mode, alpha=alpha, provenance=dataset.provenance)
@@ -98,6 +121,8 @@ def test_partitions_exact_coverage_reproducible_train_only(dataset, mode, alpha,
         partition_dataframe(dataset.frame, **kwargs)
 
 
+# Rows that belong to the same provenance "group" (e.g. duplicated in the dataset) must
+# be assigned to a single simulated lab together, never split across two labs.
 def test_duplicate_training_group_stays_in_one_lab(dataset):
     df = dataset.rows("train").copy()
     duplicate = df.iloc[[0]].copy()
@@ -107,6 +132,9 @@ def test_duplicate_training_group_stays_in_one_lab(dataset):
     assert sum({int(df.iloc[0].row_id), 99999} <= set(p.row_id) for p in parts) == 1
 
 
+# encode_labels() must reject a label outside the fixed class set, and CBCPreprocessor
+# must reject a feature list given in the wrong order (feature order must match the
+# model's expected input layout exactly).
 def test_unknown_labels_and_feature_order_rejected():
     with pytest.raises(ValueError):
         encode_labels(["leukemia", "unknown"])

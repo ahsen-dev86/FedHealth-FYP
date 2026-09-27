@@ -16,6 +16,7 @@ const STATUS_META = {
   down: { label: 'Down', icon: CircleX, cls: 'border-destructive/30 bg-destructive/10 text-destructive' },
 };
 
+// Human-readable "time since last report" for the sample node-status table.
 function timeAgo(iso) {
   if (!iso) return 'never';
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -24,6 +25,7 @@ function timeAgo(iso) {
   return `${days} days ago`;
 }
 
+// Illustrative "live node heartbeat" table (no real FL client reports liveness).
 export function SampleNodeStatus() {
   const nodes = sampleNodeStatus();
   return (
@@ -64,6 +66,7 @@ export function SampleNodeStatus() {
   );
 }
 
+// Lists the simulated lab partitions and how many training rows each held per run.
 export default function NodeStatusTable({ nodes }) {
   if (!nodes) return <p className="text-sm text-muted-foreground">Loading nodes…</p>;
   if (nodes.length === 0) return <p className="text-sm text-muted-foreground">No federated run has been imported yet.</p>;

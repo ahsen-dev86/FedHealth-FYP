@@ -1,4 +1,11 @@
-"""Global validation and predeclared safety-gated best-round selection."""
+"""Global validation and predeclared safety-gated best-round selection.
+
+Runs the server-side, held-out validation used to pick which federated round's
+weights become the deployed model. A round is only a selection candidate
+("eligible") if it does not regress macro-F1 or increase "sick called
+healthy" errors beyond fixed, predeclared tolerances versus round zero — this
+is decided by fixed rules, never by cherry-picking the best-looking round.
+"""
 import numpy as np
 from sklearn.metrics import confusion_matrix, log_loss
 
@@ -6,6 +13,10 @@ from aggregation import weights_sha256
 
 
 def evaluate_probabilities(y_true, probabilities, n_classes):
+    """Compute the same confusion-matrix-derived metrics as
+    metrics.from_confusion, directly from a probability matrix (log loss,
+    accuracy, balanced accuracy, macro/weighted F1, sick-called-healthy count,
+    per-class recall/support, confusion matrix)."""
     probabilities = np.asarray(probabilities, dtype=float)
     y_true = np.asarray(y_true, dtype=int)
     if probabilities.shape != (len(y_true), n_classes) or not np.isfinite(
@@ -64,6 +75,12 @@ class ValidationTracker:
         self.baseline = None
 
     def evaluate(self, server_round, parameters, config):
+        """Flower calls this once per round (round 0 = initial weights) with
+        the current global weights. Evaluates them on the held-out validation
+        set, records the round in `history`, flags it "eligible" only if it
+        meets the fixed safety rules versus the round-0 baseline, and updates
+        `best_*` if this is the lowest-loss eligible round seen so far.
+        Re-evaluating an already-seen round just replays its cached metrics."""
         round_number = int(server_round)
         weight_hash = weights_sha256(parameters)
         if self.history and self.history[-1]["round"] == round_number:
@@ -80,6 +97,8 @@ class ValidationTracker:
         metrics = evaluate_probabilities(self.y, probabilities, self.n_classes)
         if round_number == 0:
             self.baseline = dict(metrics)
+        # Safety gate: never select a round that drops macro-F1 too far below,
+        # or increases dangerous sick->healthy misclassifications past, round 0.
         safe = (metrics["macro_f1"] >=
                 self.baseline["macro_f1"] - self.max_macro_f1_drop and
                 metrics["sick_called_healthy"] <=

@@ -7,6 +7,9 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Donor-board feed: only still-actionable requests (open/partially fulfilled),
+// each filter param optional (NULL = don't filter on it), sorted most-urgent
+// first via an explicit CASE ranking (urgency is text, not naturally ordered).
 async function listPublic({ category = null, province = null, urgency = null } = {}) {
   const { rows } = await query(
     `SELECT sr.*, n.name AS ngo_name, n.district AS ngo_district

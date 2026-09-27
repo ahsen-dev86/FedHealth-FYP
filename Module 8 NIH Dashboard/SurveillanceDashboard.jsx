@@ -30,6 +30,7 @@ export default function SurveillanceDashboard() {
   const [openAlertCount, setOpenAlertCount] = useState(null);
   const [err, setErr] = useState('');
 
+  // Refetch clusters from the backend whenever the province/condition filters change.
   const loadClusters = useCallback(async () => {
     setErr('');
     const qs = new URLSearchParams();
@@ -108,6 +109,7 @@ export default function SurveillanceDashboard() {
               {clusters == null
                 ? <p className="fh-muted">Loading map…</p>
                 : <ClusterMap clusters={clusters} mode={mapMode} />}
+              {/* Map legend explaining marker color/size */}
               <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 12, color: 'var(--ink-soft)' }}>
                 <span><span style={{ color: '#0E7C7B' }}>●</span> cluster (marker size ∝ cases)</span>
                 <span><span style={{ color: '#B4453C' }}>●</span> contains high-risk cases</span>

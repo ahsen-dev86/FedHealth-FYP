@@ -17,7 +17,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const speakeasy = require('speakeasy');
+const speakeasy = require('speakeasy'); // TOTP (RFC 6238) library: generates the MFA secret/codes
 const Users = require('../src/models/users');
 const Roles = require('../src/models/roles');
 const password = require('../src/auth/password');

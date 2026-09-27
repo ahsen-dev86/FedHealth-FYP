@@ -24,37 +24,58 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 
+// Disease classes only; 'healthy' results aren't shown as surveillance clusters.
 const CONDITIONS = CLASSES.filter((c) => c !== 'healthy');
+
+// Screening flags for one condition: results whose top score is that condition.
+// Leukemia also counts risk-flagged results where another class is top (the same
+// rule the cluster alerts use), which is why `rows` must include every class.
+function conditionFlags(rows, condition) {
+  return rows.reduce((n, c) => {
+    if (c.condition === condition) return n + (Number(c.case_count) || 0);
+    if (condition === 'leukemia') return n + (Number(c.high_risk_count) || 0);
+    return n;
+  }, 0);
+}
 
 export default function SurveillanceDashboard() {
   const [tab, setTab] = useState('surveillance');
-  const [clusters, setClusters] = useState(null);
+  const [rows, setRows] = useState(null); // every class for the province, healthy included
   const [filters, setFilters] = useState({ province: '__all', condition: '__all' });
   const [mapMode, setMapMode] = useState('markers');
   const [openAlertCount, setOpenAlertCount] = useState(null);
   const [err, setErr] = useState('');
 
+  // Fetched per province only; the condition filter is applied below so the
+  // leukemia flag count can still see risk flags on other classes' results.
   const loadClusters = useCallback(async () => {
     setErr('');
     const qs = new URLSearchParams();
     if (filters.province !== '__all') qs.set('province', filters.province);
-    if (filters.condition !== '__all') qs.set('condition', filters.condition);
     try {
-      const rows = await api.get(`/nih/clusters?${qs.toString()}`);
-      setClusters(rows.filter((c) => c.condition !== 'healthy'));
-    } catch (e) { setErr(e.message); setClusters([]); }
-  }, [filters]);
+      setRows(await api.get(`/nih/clusters?${qs.toString()}`));
+    } catch (e) { setErr(e.message); setRows([]); }
+  }, [filters.province]);
 
   useEffect(() => { loadClusters(); }, [loadClusters]);
 
+  // Clusters actually shown on the map/table: healthy rows dropped, then the
+  // condition filter applied (separately from `rows`, so stats above can still
+  // see all classes for the leukemia flag count).
+  const clusters = useMemo(() => rows && rows.filter((c) => c.condition !== 'healthy'
+    && (filters.condition === '__all' || c.condition === filters.condition)), [rows, filters.condition]);
+
   // Aggregate summary across the returned clusters (numbers arrive as strings).
   const stats = useMemo(() => {
-    const rows = clusters || [];
-    const cases = rows.reduce((a, c) => a + (Number(c.case_count) || 0), 0);
-    const highRisk = rows.reduce((a, c) => a + (Number(c.high_risk_count) || 0), 0);
-    const districts = new Set(rows.map((c) => c.district).filter(Boolean)).size;
-    return { cases, highRisk, districts };
-  }, [clusters]);
+    const shown = clusters || [];
+    const cases = shown.reduce((a, c) => a + (Number(c.case_count) || 0), 0);
+    const flagged = filters.condition === '__all' ? CONDITIONS : [filters.condition];
+    const flags = flagged.reduce((a, cond) => a + conditionFlags(rows || [], cond), 0);
+    const districts = new Set(shown.map((c) => c.district).filter(Boolean)).size;
+    return { cases, flags, districts };
+  }, [rows, clusters, filters.condition]);
+  const flagsLabel = filters.condition === '__all'
+    ? 'Total disease flags' : `${conditionLabel(filters.condition)} flags`;
 
   return (
     <div>
@@ -75,8 +96,9 @@ export default function SurveillanceDashboard() {
         <TabsContent value="surveillance" className="mt-4">
           {/* Summary stats */}
           <div className="mb-4 grid grid-cols-3 gap-3.5">
-            {[['Screening results (non-healthy)', stats.cases], ['Leukemia risk flags', stats.highRisk], ['Districts reporting', stats.districts]].map(([label, val]) => (
-              <Card key={label}>
+            {[['cases', 'Screening results (non-healthy)', stats.cases], ['flags', flagsLabel, stats.flags],
+              ['districts', 'Districts reporting', stats.districts]].map(([id, label, val]) => (
+              <Card key={id} data-testid={`stat-${id}`}>
                 <CardContent>
                   <div className="text-xs text-muted-foreground">{label}</div>
                   <div className="mt-1 font-mono text-[28px] tabular-nums text-primary">{val}</div>
@@ -120,6 +142,7 @@ export default function SurveillanceDashboard() {
               {clusters == null
                 ? <p className="text-sm text-muted-foreground">Loading map…</p>
                 : <ClusterMap clusters={clusters} mode={mapMode} />}
+              {/* Map legend: one colored dot per condition, plus the risk-flag ring meaning */}
               <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
                 {CONDITIONS.map((c) => (
                   <span key={c}><span style={{ color: conditionColor(c) }}>●</span> {conditionLabel(c)}</span>

@@ -36,6 +36,8 @@ class BlindAggregator:
 
     def __init__(self, public_key, *, allowed_lab_ids, expected_train_rows,
                  preprocessor_sha256, shapes, training_config):
+        # Everything stored here is either public (the key) or metadata used to
+        # validate incoming ciphertext shape/provenance — never plaintext weights.
         self.public_key = public_key
         self.allowed_lab_ids = tuple(allowed_lab_ids)
         self.expected_train_rows = dict(expected_train_rows)
@@ -47,6 +49,7 @@ class BlindAggregator:
         self.total_examples = 1  # round 1 receives E(w0), which is not a sum
 
     def fit_config(self, server_round):
+        """Build the per-round training config dict sent to every lab (round number + shared preprocessor hash)."""
         return {**self.training_config, "server_round": int(server_round),
                 "preprocessor_sha256": self.preprocessor_sha256}
 
@@ -94,9 +97,11 @@ class EncryptedLab:
     """Wraps a Module 4 LabClient: decrypt global, train locally, encrypt update."""
 
     def __init__(self, client, public_key, private_key):
+        # This is the only place in the simulation that holds the private key.
         self.client, self.pub, self.priv = client, public_key, private_key
 
     def fit(self, wire_global, total_examples, config):
+        """Decrypt the aggregated global weights, train locally (Module 4 logic), re-encrypt the update."""
         layers = pu.decrypt_weights(self.priv, pu.deserialize_encrypted(self.pub, wire_global),
                                     divisor=total_examples)
         if not all(np.isfinite(layer).all() for layer in layers):
@@ -237,6 +242,7 @@ def compare_with_reference(reference, encrypted_dir):
 
 
 def main():
+    """CLI entry point: run the encrypted FedAvg simulation and, optionally, the plaintext equivalence check."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     ap.add_argument("--provenance", type=Path, default=DEFAULT_PROVENANCE)

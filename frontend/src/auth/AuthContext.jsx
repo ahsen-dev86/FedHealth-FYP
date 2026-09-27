@@ -97,6 +97,8 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// Hook for consuming the auth context; throws if used outside AuthProvider so
+// misplaced components fail fast instead of silently getting a null user.
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

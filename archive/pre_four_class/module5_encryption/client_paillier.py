@@ -1,5 +1,8 @@
 # fl/client/client_paillier.py
 # ---------------------------------------------------------------------------
+# Archived (pre-four-class): part of the earlier Model A federated-learning
+# pipeline, kept under archive/pre_four_class for history.
+#
 # Module 6.3.2 (encrypted) — the Lab Tier client that keeps the server blind.
 #
 # Uses Flower's low-level Client interface (not NumPyClient) so we can move raw
@@ -14,7 +17,7 @@ import os
 import sys
 
 import numpy as np
-import flwr as fl
+import flwr as fl  # flwr (Flower): federated-learning framework providing the client/server protocol
 from flwr.common import (GetParametersRes, FitRes, EvaluateRes,
                          Status, Code)
 
@@ -29,6 +32,7 @@ from client.lims_wrapper import MockLIMS  # noqa: E402
 
 
 class PaillierClient(fl.client.Client):
+    """One lab's Flower client: decrypts the global model, trains locally, re-encrypts its update."""
     def __init__(self, lab_id, shard_csv, preprocessor,
                  public_key, private_key, local_epochs=2, batch_size=32):
         self.lab_id = lab_id
@@ -52,6 +56,7 @@ class PaillierClient(fl.client.Client):
         return [layer / n for layer in summed]
 
     def get_parameters(self, ins):
+        """Flower callback: return this client's current weights, encrypted, as the initial parameters."""
         enc = pu.encrypt_weights(self.pub, task.get_weights(self.model))
         return GetParametersRes(status=Status(Code.OK, ""),
                                 parameters=crypto.encrypted_to_parameters(enc))
@@ -71,6 +76,7 @@ class PaillierClient(fl.client.Client):
                       metrics={"lab_id": self.lab_id})
 
     def evaluate(self, ins):
+        """Flower callback: decrypt the global model and report this lab's local loss/metrics on its test shard."""
         task.set_weights(self.model, self._global_weights(ins.parameters, ins.config))
         loss, _ = self.model.evaluate(self.Xte, self.yte, verbose=0)
         y_pred = np.argmax(self.model.predict(self.Xte, verbose=0), axis=1)

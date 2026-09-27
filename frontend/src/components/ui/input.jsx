@@ -1,3 +1,5 @@
+// Input primitive — thin wrapper over Base UI's Input, just adding shared
+// styling (focus ring, disabled/invalid states) via Tailwind classes.
 import * as React from "react"
 import { Input as InputPrimitive } from "@base-ui/react/input"
 import { cn } from "cn"

@@ -8,8 +8,12 @@
 // ---------------------------------------------------------------------------
 const { query, withTransaction } = require('../db/pool');
 
+// Use the caller's transaction client if given, otherwise the shared pool.
 const run = (db) => (db ? db.query.bind(db) : query);
 
+// Inserts a model version, or updates it in place if (name, version) already
+// exists (idempotent re-registration). is_active is OR'd with the existing
+// value so re-running registration never silently deactivates a live model.
 async function register({
   name, version, diseaseScope = null, classes, metrics = {}, calibration = null, isActive = false,
   provenance = {}, limitations = {}, trainingData = {},
@@ -53,6 +57,8 @@ async function findByNameVersion(name, version, db = null) {
   return rows[0] || null;
 }
 
+// Active model, optionally narrowed to one name; the WHERE clause is built up
+// dynamically since the name filter is optional.
 async function findActive(name = null, db = null) {
   const params = [];
   let where = 'is_active = true';
@@ -67,6 +73,8 @@ async function findActive(name = null, db = null) {
 /** Module 6 name for findActive(name). */
 const getActive = (name, db = null) => findActive(name, db);
 
+// Registry listing for admin/dashboard views; pulls accuracy/macro_f1 straight
+// out of the jsonb `metrics` column instead of returning the whole blob.
 async function listAll(db = null) {
   const { rows } = await run(db)(
     `SELECT id, name, version, disease_scope, classes, calibration, is_active, created_at,

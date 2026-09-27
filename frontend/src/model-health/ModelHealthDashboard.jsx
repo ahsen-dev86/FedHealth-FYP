@@ -26,6 +26,7 @@ const SPANS = [
   ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'],
 ];
 
+// Small icon + label + value tile used for the top summary-stat row.
 function StatCard({ icon: Icon, label, value, sub, testId }) {
   return (
     <Card>
@@ -56,6 +57,8 @@ export default function ModelHealthDashboard() {
   const [days, setDays] = useState('30');
   const [err, setErr] = useState('');
 
+  // Load every panel's data independently on mount so one failing endpoint
+  // doesn't block the others from rendering.
   useEffect(() => {
     const fail = (e) => setErr(e.message);
     api.get('/model-health/summary').then(setSummary).catch((e) => { fail(e); setSummary({}); });
@@ -66,12 +69,14 @@ export default function ModelHealthDashboard() {
     api.get('/model-health/encryption').then(setEncryption).catch(() => setEncryption({}));
   }, []);
 
+  // Reload the accuracy-history chart whenever a different federated run is selected.
   useEffect(() => {
     setHistory(null);
     api.get(`/model-health/accuracy-history${runId ? `?run=${runId}` : ''}`)
       .then(setHistory).catch(() => setHistory({ points: [] }));
   }, [runId]);
 
+  // Reload the data-intake charts when the selected time window changes.
   useEffect(() => {
     setIntake(null);
     api.get(`/model-health/data-intake?days=${days}`).then(setIntake).catch(() => setIntake({ days: Number(days) }));

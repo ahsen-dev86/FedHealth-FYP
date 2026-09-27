@@ -3,9 +3,12 @@
 // with a short-lived pre-auth token (login never yields a full session token —
 // MFA is mandatory, per the backend).
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom'; // react-router-dom: programmatic navigation after login/register
 import { useAuth } from './AuthContext';
 
+// Combined sign-in / register form (toggled by `mode`). Both flows end by
+// navigating to /mfa with a pre-auth token, since a full session always
+// requires completing MFA first.
 export default function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
@@ -18,6 +21,8 @@ export default function LoginPage() {
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // Submits login or register, then routes to the MFA page with the
+  // pre-auth token; 'setup' vs 'verify' tells MfaPage which flow to run.
   async function submit(e) {
     e.preventDefault();
     setError(''); setBusy(true);
@@ -26,6 +31,7 @@ export default function LoginPage() {
         const r = await login(form.email, form.password);
         navigate('/mfa', { state: {
           preAuthToken: r.preAuthToken,
+          // Backend tells us whether this account still needs to enroll in MFA.
           mode: r.mfaSetupRequired ? 'setup' : 'verify',
         }});
       } else {

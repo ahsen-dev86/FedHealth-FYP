@@ -14,7 +14,7 @@ from pathlib import Path
 import glob
 import numpy as np
 import pandas as pd
-from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import NearestNeighbors  # used only to impute the few columns a source never measured
 
 SEED = 42
 TARGET = 800                      # rows per class
@@ -34,6 +34,8 @@ RANGES = {
 }
 
 
+# Boolean mask: True for rows where every listed column is either missing or within
+# its physiologically plausible bound. Used to drop obviously bad source rows.
 def in_range(df, cols):
     ok = pd.Series(True, index=df.index)
     for c in cols:
@@ -42,6 +44,9 @@ def in_range(df, cols):
     return ok
 
 
+# Build a standard output frame for one source: FEATURES columns (missing ones left
+# NaN via **cols) plus the provenance columns (label, subtype, source, source_row,
+# label_basis) that every loader below returns.
 def frame(label, subtype, source, basis, src_row, **cols):
     d = pd.DataFrame({c: cols.get(c, np.nan) for c in FEATURES})
     d.insert(0, "subtype", subtype)
@@ -53,6 +58,8 @@ def frame(label, subtype, source, basis, src_row, **cols):
 
 
 # ---------------------------------------------------------------- 1. Kaggle anemia types
+# Loads the Kaggle CBC dataset and fixes known data-entry quirks (a constant mean-fill
+# artifact, MCHC typos) before labelling rows healthy / anemia / leukemia.
 def load_kaggle_anemia():
     k = pd.read_csv(ROOT / "anemia_diagnosed_cbc_data_v4.csv")
     k["source_row"] = k.index + 2                       # 1-based file line incl. header
@@ -76,6 +83,7 @@ def load_kaggle_anemia():
 
 
 # ---------------------------------------------------------------- 2. plenoi (alpha thal + normal)
+# Loads the plenoi cohort (healthy + 3 alpha-thalassemia subtypes, encoded as Group 1-4).
 def load_plenoi():
     p = pd.read_excel(HERE / "Alpha-2_addition-230622.xlsx", sheet_name="all")
     p["source_row"] = p.index + 2
@@ -92,6 +100,8 @@ def load_plenoi():
 
 
 # ---------------------------------------------------------------- 3. letslive (alpha carriers only)
+# Loads only the "alpha carrier" phenotype rows; this source's own 'normal' rows are
+# microcytic (not representative of a healthy CBC), so they are excluded.
 def load_letslive():
     a = pd.read_csv(ROOT / "thalassemia" / "thalassemia_alphanorm.csv")
     a["source_row"] = a.index + 2
@@ -105,6 +115,9 @@ def load_letslive():
 
 
 # ---------------------------------------------------------------- 4. Mendeley Iraq (beta trait by HbA2 rule)
+# This source has no explicit diagnosis label, so beta-thalassemia trait is inferred from
+# HbA2 % + microcytosis (a standard screening rule), and missing CBC fields (RBC/HCT/MCHC)
+# are recovered from the row's own Hb/MCV/MCH via exact CBC identities.
 def load_mendeley():
     m = pd.read_excel(HERE / "thalassimia.xlsx").iloc[:, :12]
     m.columns = ["ID", "Gender", "Age", "MCV", "Hb", "MCH", "RBC", "S", "HbA2", "HbA", "HbF", "Iron"]
@@ -125,6 +138,9 @@ def load_mendeley():
 
 
 # ---------------------------------------------------------------- 5. LeukoAlert
+# Concatenates every LeukoAlert site CSV, renames columns to this project's plain names,
+# and normalizes unit inconsistencies (HGB/MCHC per-litre -> per-decilitre, HCT fraction
+# vs percent) before the shared in_range() filter is applied.
 def load_leukoalert():
     parts = []
     for f in sorted(glob.glob(str(LEUKO / "*" / "*.csv"))):
@@ -171,6 +187,10 @@ def to_frame(d, label, subtype, basis):
 
 
 # ---------------------------------------------------------------- build
+# Loads all 5 sources, balances each of the 4 output classes to TARGET rows
+# (downsampling, never generating synthetic rows), imputes the columns a source never
+# measured from the nearest real LeukoAlert patient, then writes the train/val/test
+# split CSV plus a provenance copy that traces every row back to its original source.
 def main():
     ka, pl, le, me, lk = (load_kaggle_anemia(), load_plenoi(), load_letslive(),
                           load_mendeley(), load_leukoalert())

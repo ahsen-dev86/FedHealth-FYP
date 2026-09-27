@@ -37,6 +37,7 @@ OLD_LABELS = ["iron_deficiency_anemia", "normocytic_hypochromic_anemia", "normoc
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 
+# Loads the exported Node-side contract JSON (see tools/export_contract.py) fresh each call.
 def contract():
     return json.loads(CONTRACT_JSON.read_text(encoding="utf-8"))
 
@@ -53,12 +54,17 @@ READ_STDIN = "const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
 
 
 # --- schema.py -> exported JSON ----------------------------------------------------------------
+# The checked-in contract JSON must be byte-identical to what export_contract.py would
+# regenerate right now — catches anyone hand-editing the JSON or forgetting to re-run the
+# export script after changing schema.py.
 def test_exported_contract_is_current():
     import export_contract
     assert CONTRACT_JSON.read_text(encoding="utf-8").replace("\r\n", "\n") == export_contract.render(), \
         "Run: python tools/export_contract.py"
 
 
+# Every field the exported contract carries (feature/class order, units, plausible
+# ranges, model name/version) must match Module 3's schema.py exactly.
 def test_exported_contract_matches_schema():
     c = contract()
     assert c["features"] == schema.FEATURES and c["classes"] == schema.CLASSES
@@ -70,6 +76,9 @@ def test_exported_contract_matches_schema():
 
 
 # --- normalize_units <-> exported unit table ---------------------------------------------------
+# Every unit alias + conversion factor the contract exports must round-trip through
+# Python's normalize_units() to the same value, and a unit NOT in the export must still be
+# rejected by normalize_units (keeps the two definitions of "accepted units" in sync).
 def test_every_exported_unit_alias_converts_like_normalize_units():
     for feature, aliases in contract()["accepted_units"].items():
         lo, hi = schema.PLAUSIBLE_RANGES[feature]
@@ -82,6 +91,9 @@ def test_every_exported_unit_alias_converts_like_normalize_units():
                 normalize_units({feature: target}, units={feature: bogus})
 
 
+# Runs the same unit-conversion/rejection cases through the real Node backend service
+# (cbc.js) and through Python's normalize_units(), asserting identical results (or
+# identically-shaped 400 errors) — the cross-language half of the unit contract.
 @node
 def test_node_conversion_and_rejections_match_python():
     cases = [
@@ -120,6 +132,9 @@ def test_node_conversion_and_rejections_match_python():
 
 
 # --- database literals (init/*.sql) ------------------------------------------------------------
+# The class list and plausible-range JSONB literals hard-coded into the SQL migration
+# must match schema.py exactly (they can't import Python, so they're hand-written and
+# must be checked here instead).
 def test_database_contract_literals_match_schema():
     sql = (BACKEND / "init/009_four_class_contract_and_fl_runs.sql").read_text(encoding="utf-8")
     classes = re.search(r"ARRAY\[([^\]]+)\]::text\[\]", sql).group(1)
@@ -131,6 +146,8 @@ def test_database_contract_literals_match_schema():
     assert sql.count(f"'{four}'::jsonb") == 2  # model-contract deactivation + chk_ml_models_four_class
 
 
+# The project used to be a 9-class model; no SQL/JS/Python source should still reference
+# any of the old 9-class label strings as if they were current model classes.
 def test_seed_and_backend_sources_have_no_old_class_names():
     files = [*(BACKEND / "init").glob("*.sql"), *(BACKEND / "src").rglob("*.js"),
              ROOT / "Module 1 Database/seed.sql", ROOT / "Module 6 Domain API/predictors.py"]
@@ -139,6 +156,8 @@ def test_seed_and_backend_sources_have_no_old_class_names():
     assert hits == []
 
 
+# The seed SQL must never insert a fake ml_models row with invented metrics — real model
+# metadata is only registered by the actual training/registration pipeline.
 def test_seed_contains_no_fabricated_metrics():
     for f in (BACKEND / "init").glob("*.sql"):
         text = f.read_text(encoding="utf-8").lower()
@@ -146,6 +165,9 @@ def test_seed_contains_no_fabricated_metrics():
 
 
 # --- OCR -> Python normalization ---------------------------------------------------------------
+# A realistic lab-report text block, parsed by the real Node OCR extractor (ocr.js), must
+# produce exactly the expected CBC values/units, which must then normalize cleanly through
+# Python's normalize_units() with no surprises.
 @node
 def test_ocr_output_is_accepted_by_normalize_units():
     text = "\n".join([
@@ -167,6 +189,8 @@ def test_ocr_output_is_accepted_by_normalize_units():
 
 
 # --- trained bundle and registry payload -------------------------------------------------------
+# The actual trained model bundle on disk and the metrics payload registered with the
+# backend must agree with schema.py and with each other on version, classes and accuracy.
 def test_served_bundle_and_registry_payload_match_schema():
     meta = json.loads((BUNDLE / "meta.json").read_text())
     assert meta["classes"] == schema.CLASSES and meta["features"] == schema.FEATURES
@@ -179,6 +203,8 @@ def test_served_bundle_and_registry_payload_match_schema():
 
 
 # --- Flask /infer on the real bundle -----------------------------------------------------------
+# Boots the real Module 6 Flask app against the actual seed-42 trained bundle (skips if
+# that bundle isn't present, e.g. on a fresh checkout without the large model files).
 @pytest.fixture(scope="module")
 def api(tmp_path_factory):
     if not (BUNDLE / "ann.keras").exists():
@@ -195,6 +221,9 @@ def api(tmp_path_factory):
     return module.app.test_client()
 
 
+# Full contract check against the live Flask API: /contract shape, a normal /infer
+# prediction's scores/labels/version, imputation reporting when a feature is missing, and
+# 400 responses for every malformed request shape.
 @pytest.mark.integration
 def test_inference_api_contract_on_real_bundle(api):
     c = api.get("/contract").json
@@ -264,6 +293,8 @@ def run_node_esm(script, payload):
 ESM_STDIN = "import fs from 'node:fs'; const input = JSON.parse(fs.readFileSync(0, 'utf8'));"
 
 
+# The frontend's own copy of the contract JSON must be one of export_contract.py's
+# TARGETS and must be byte-identical to a fresh render (kept in sync with the backend copy).
 def test_frontend_contract_copy_is_identical_and_current():
     import export_contract
     front = FRONTEND / "src/lib/cbcContract.json"
@@ -271,6 +302,8 @@ def test_frontend_contract_copy_is_identical_and_current():
     assert front.read_text(encoding="utf-8").replace("\r\n", "\n") == export_contract.render()
 
 
+# Same old-label check as test_seed_and_backend_sources_have_no_old_class_names(), but
+# scanning the frontend's own source tree.
 def test_frontend_sources_have_no_old_class_names():
     hits = [(f.relative_to(ROOT).as_posix(), label) for f in (FRONTEND / "src").rglob("*")
             if f.suffix in {".js", ".jsx", ".json"} for label in OLD_LABELS if label in f.read_text(encoding="utf-8")
@@ -278,6 +311,9 @@ def test_frontend_sources_have_no_old_class_names():
     assert hits == []
 
 
+# The frontend's own CBC form field list, unit dropdown options, condition labels and
+# chart colors must all be driven by the contract — never a separately hand-typed list
+# that could drift from schema.py.
 @node
 def test_frontend_form_fields_units_and_labels_follow_the_contract():
     import export_contract
@@ -315,6 +351,9 @@ FRONT_CASES = [  # (values as typed in the form, units)
 FRONT_NOT_NUMBERS = ["abc", "12,4", "1e3", "12.4.5", "--1"]
 
 
+# Feeds the same "as typed in the form" cases through the frontend's own validateCbc(),
+# the Node backend's prepareCbc(), and Python's normalize_units(), and asserts all three
+# agree on the canonical values, warnings and error wording.
 @node
 def test_frontend_validation_matches_backend_and_python():
     front = run_node_esm(ESM_STDIN + """
@@ -343,6 +382,8 @@ def test_frontend_validation_matches_backend_and_python():
     assert typed == ["HGB must be a number"] * len(FRONT_NOT_NUMBERS)  # "12,4" is ambiguous, never read as 124
 
 
+# The older, standalone portal folders were replaced by the unified frontend/ app; their
+# READMEs must say so rather than silently looking like still-current alternatives.
 def test_standalone_frontend_copies_are_marked_superseded():
     for folder in ["Module 7 Doctor Portal", "Module 8 NIH Dashboard"]:
         text = (ROOT / folder / "README.md").read_text(encoding="utf-8")

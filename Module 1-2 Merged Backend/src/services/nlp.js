@@ -37,6 +37,7 @@ const SYMPTOM_LEXICON = {
                     ur: ['پیٹ میں سوجن', 'تلی بڑھنا'], roman: ['pet sujan', 'pet mein sujan', 'tilli'] },
 };
 
+// Any Arabic-script codepoint means the text has some Urdu in it (used to tag language, not to route logic).
 function hasUrdu(text) {
   return /[\u0600-\u06FF]/.test(text);
 }

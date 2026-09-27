@@ -43,7 +43,7 @@ function prepareCbc({ cbc, units, canonicalUnits } = {}) {
   const usedUnits = {};
   for (const feature of FEATURES) {
     const value = cbc[feature];
-    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) continue;
+    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) continue; // not supplied; the model imputes it later
     const unit = declared[feature];
     if (unit == null || !String(unit).trim()) throw new HttpError(400, `Declare the unit for ${feature}`);
     if (typeof value !== 'number' || !Number.isFinite(value)) {

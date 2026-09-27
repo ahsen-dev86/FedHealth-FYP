@@ -1,4 +1,11 @@
-"""Exhaustive, disjoint train-only IID, Dirichlet or source lab partitions."""
+"""Exhaustive, disjoint train-only IID, Dirichlet or source lab partitions.
+
+Splits the training rows across simulated hospital "labs" (federated learning
+clients) for Module 4. Three partitioning strategies are supported: `iid`
+(each lab gets a similar class mix), `non_iid` (Dirichlet-skewed class mix per
+lab, to simulate realistic hospital heterogeneity), and `source` (partition by
+real dataset provenance/source). Every row is assigned to exactly one lab.
+"""
 import numpy as np
 import pandas as pd
 from fedhealth_ml import schema
@@ -6,6 +13,17 @@ from fedhealth_ml.data import validate_frame
 
 
 def partition_dataframe(frame, num_labs=3, mode="iid", seed=42, alpha=.5, provenance=None):
+    """Split `frame` (training rows only) into `num_labs` disjoint shards.
+
+    mode="iid": each class's rows are split ~evenly across labs.
+    mode="non_iid": each class's rows are split using Dirichlet(alpha) weights
+      per lab — smaller alpha means more skewed (non-IID) class distributions,
+      a common way to simulate realistic cross-hospital heterogeneity.
+    mode="source": labs are assigned 1:1 to real provenance sources instead of
+      being randomly drawn.
+    Rows sharing identical feature values are always kept together in one lab
+    (via group_ids) so duplicate records never leak across the federation
+    boundary. Returns a list of `num_labs` dataframes covering every row exactly once."""
     validate_frame(frame, require_all_splits=False)
     if set(frame.split) != {"train"}:
         raise ValueError("Labs may receive training rows only")
@@ -44,8 +62,9 @@ def partition_dataframe(frame, num_labs=3, mode="iid", seed=42, alpha=.5, proven
                     for gid in chunk:
                         bins[(i + offset) % num_labs].extend(groups[gid])
             if min(map(len, bins)) >= 1:
-                break
+                break  # every lab got at least one row; accept this random draw
         else:
+            # Highly skewed Dirichlet draws can leave a lab empty; retry with a new random split rather than fail outright.
             raise ValueError("Could not generate non-empty partitions in 1000 attempts")
     shards = [df.iloc[rng.permutation(b)].reset_index(drop=True) for b in bins]
     joined = pd.concat(shards)

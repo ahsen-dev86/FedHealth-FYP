@@ -21,7 +21,7 @@
 # ---------------------------------------------------------------------------
 import json
 import os
-import numpy as np
+import numpy as np  # numerical arrays; TensorFlow/XGBoost are imported lazily below where needed
 
 
 # --- ANN (Keras) ------------------------------------------------------------
@@ -202,12 +202,15 @@ def set_ann_weights(ann, weights):
 
 # --- Metrics (populate ml_models.metrics for the registry) ------------------
 def compute_metrics(y_true_int, y_pred_int, classes):
+    """Build a confusion matrix from hard predictions and summarize it via
+    metrics.from_confusion (accuracy/F1/per-class recall, etc.)."""
     from .metrics import from_confusion
     from sklearn.metrics import confusion_matrix
     return from_confusion(confusion_matrix(y_true_int, y_pred_int, labels=range(len(classes))), classes)
 
 
 def write_registry_metrics(out_dir, metrics):
+    """Persist a metrics dict as metrics.json for the model registry."""
     from pathlib import Path
     from .runtime import write_json
     write_json(Path(out_dir) / "metrics.json", metrics)

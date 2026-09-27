@@ -1,5 +1,7 @@
 "use client"
 
+// Select primitive — wraps Base UI's Select (listbox behavior, positioning,
+// scroll buttons) with the shadcn/ui look.
 import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
@@ -59,6 +61,8 @@ function SelectTrigger({
   )
 }
 
+// Portals and positions the dropdown list relative to the trigger; includes
+// scroll-up/down buttons for long option lists.
 function SelectContent({
   className,
   children,

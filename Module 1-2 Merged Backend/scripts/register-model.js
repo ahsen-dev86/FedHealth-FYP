@@ -70,6 +70,7 @@ function trainingData(csvPath) {
   };
 }
 
+/** Condense the source-holdout report (accuracy when each data source is excluded) into the registry's `limitations`. */
 function summarizeHoldout(holdout, holdoutPath) {
   const sources = Object.entries(holdout.results).map(([source, r]) => ({
     excluded_source: source,

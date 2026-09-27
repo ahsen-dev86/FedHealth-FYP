@@ -8,6 +8,7 @@ import { Lock, LockOpen } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { formatDate } from '../lib/help';
 
+// Renders a plaintext-run count plus one detail card per encrypted (Paillier) run.
 export default function EncryptionStatusCard({ status }) {
   if (!status) return <p className="text-sm text-muted-foreground">Loading…</p>;
   const byScheme = status.runsByScheme || {};

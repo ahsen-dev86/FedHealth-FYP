@@ -7,11 +7,14 @@
 // ---------------------------------------------------------------------------
 const { query } = require('../db/pool');
 
+// Fields safe to show on the public Help Portal (excludes internal columns like user_id).
 const PUBLIC_FIELDS = `
   id, name, mission, description, logo_url, website,
   contact_email, contact_phone, district, province, donation_info,
   verified, created_at`;
 
+// Public NGO directory, each with a count of its currently open supply
+// requests (LEFT JOIN + FILTER so NGOs with zero open requests still show 0).
 async function listPublic() {
   const { rows } = await query(
     `SELECT n.${PUBLIC_FIELDS.replace(/\n\s*/g, ' ')},
@@ -47,6 +50,9 @@ async function getOrCreateForUser(userId, fallbackName) {
   return rows[0];
 }
 
+// Partial update of the caller's NGO profile. Most fields use COALESCE so an
+// omitted (undefined -> null) value keeps the existing column instead of
+// wiping it; logoUrl/website/contact fields are set directly so they CAN be cleared.
 async function updateForUser(userId, {
   name, mission, description, logoUrl, website,
   contactEmail, contactPhone, district, province, donationInfo,

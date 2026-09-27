@@ -67,6 +67,7 @@ async function getActive(name) {
   return rows[0] || null;
 }
 
+/** Fetch a single model version by its primary key. */
 async function findById(id) {
   const { rows } = await query('SELECT * FROM ml_models WHERE id = $1', [id]);
   return rows[0] || null;

@@ -1,6 +1,6 @@
 """Render the example CBC report as a PNG test fixture for image OCR (synthetic, not a real patient)."""
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont  # Pillow: draws the fixture as a plain raster image
 
 ROWS = [
     ("Test", "Result", "Unit", "Reference range"),
@@ -16,9 +16,11 @@ ROWS = [
     ("Neutrophils", "69", "%", "40 - 75"),
     ("Lymphocytes", "25", "%", "20 - 40"),
 ]
-COLUMNS = [60, 700, 960, 1200]
+COLUMNS = [60, 700, 960, 1200]  # x-position (px) of each column: Test, Result, Unit, Reference range
 
 
+# Draws ROWS as a simple table on a white canvas and saves it where the backend's OCR
+# test fixtures expect it, so Node's image-OCR path has a stable, synthetic report to read.
 def main():
     font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 34)
     bold = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 40)

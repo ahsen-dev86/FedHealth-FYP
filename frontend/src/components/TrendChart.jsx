@@ -10,8 +10,10 @@ import {
 import { CBC_FIELDS } from '../lib/format';
 import { Button } from './ui/button';
 
+// Line chart of one selected CBC field across a patient's visit history, with
+// a button row to switch which field is plotted.
 export default function TrendChart({ reports }) {
-  const [metric, setMetric] = useState('HGB');
+  const [metric, setMetric] = useState('HGB'); // which CBC field is currently plotted
   const field = CBC_FIELDS.find((f) => f.key === metric);
 
   // reports are oldest-first from the API; map to chart points.

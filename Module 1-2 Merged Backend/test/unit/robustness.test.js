@@ -11,6 +11,7 @@ const { consistencyWarnings, plausibleUnits } = require('../../src/contract');
 const EX = { WBC: 9010, RBC: 4.47, HGB: 12.4, HCT: 38, MCV: 85, MCH: 28, MCHC: 33, RDW: 13, PLT: 147000, NEUTp: 69 };
 const UN = { WBC: '/mm3', RBC: 'mil/mm3', HGB: 'g/dL', HCT: '%', MCV: 'fl', MCH: 'pg', MCHC: 'g/dL', RDW: '%', PLT: '/mm3', NEUTp: '%' };
 
+// Run an error through the real errorHandler with a minimal fake res, capturing the status/body it would send.
 function respond(err) {
   const res = { statusCode: 0, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
   const quiet = console.error;

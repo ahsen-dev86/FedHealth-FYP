@@ -1,3 +1,9 @@
+// Sidebar primitive — a composite shadcn/ui component (not a single Base UI
+// primitive): plain styled <div>s/<ul>/<li>s for desktop, but reuses the Sheet
+// primitive (Base UI Dialog) to show the sidebar as a slide-in drawer on
+// mobile, and the Tooltip primitive to label collapsed icon-only menu items.
+// State (open/collapsed, mobile vs desktop) lives in SidebarContext and is
+// persisted to a cookie so a reload keeps the last open/collapsed state.
 import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
@@ -32,6 +38,7 @@ const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 const SidebarContext = React.createContext(null)
 
+// Access the shared sidebar state; must be called from within SidebarProvider.
 function useSidebar() {
   const context = React.useContext(SidebarContext)
   if (!context) {
@@ -41,6 +48,8 @@ function useSidebar() {
   return context
 }
 
+// Owns open/collapsed (desktop) and open/closed (mobile sheet) state, exposes
+// it via SidebarContext, and wires up the Ctrl/Cmd+B keyboard shortcut.
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -130,6 +139,9 @@ function SidebarProvider({
   );
 }
 
+// Renders one of three ways depending on `collapsible`/viewport: a plain full
+// sidebar (collapsible="none"), a Sheet drawer on mobile, or the desktop
+// fixed/animated sidebar with a same-size spacer div to hold its layout space.
 function Sidebar({
   side = "left",
   variant = "sidebar",
@@ -228,6 +240,7 @@ function Sidebar({
   )
 }
 
+// Button that calls toggleSidebar(); also forwards any caller-supplied onClick.
 function SidebarTrigger({
   className,
   onClick,
@@ -254,6 +267,8 @@ function SidebarTrigger({
   )
 }
 
+// Thin invisible strip at the sidebar's edge that also toggles it on click
+// (a bigger, easier-to-hit drag-handle-style affordance than the trigger button).
 function SidebarRail({
   className,
   ...props
@@ -469,6 +484,8 @@ function SidebarMenuItem({
   )
 }
 
+// Styling for SidebarMenuButton: `variant` (default/outline) and `size`
+// (default/sm/lg, the last used for icon-only collapsed state) via cva.
 const sidebarMenuButtonVariants = cva(
   "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
@@ -491,6 +508,9 @@ const sidebarMenuButtonVariants = cva(
   }
 )
 
+// The clickable row inside a menu item. When collapsed to icon-only on
+// desktop, an optional `tooltip` (string or TooltipContent props) shows the
+// label on hover via the Tooltip primitive.
 function SidebarMenuButton({
   render,
   isActive = false,
@@ -579,6 +599,7 @@ function SidebarMenuBadge({
   )
 }
 
+// Loading placeholder row for a menu item, using the Skeleton primitive.
 function SidebarMenuSkeleton({
   className,
   showIcon = false,

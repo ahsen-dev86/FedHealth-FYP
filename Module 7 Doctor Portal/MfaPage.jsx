@@ -3,6 +3,8 @@
 // 'verify' asks for a code at login. Both end by storing a full access token and
 // redirecting home.
 import { useEffect, useState } from 'react';
+// react-router-dom: useLocation reads the state handed off by LoginPage
+// (preAuthToken + mode); useNavigate redirects home once MFA succeeds.
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
@@ -28,6 +30,9 @@ export default function MfaPage() {
     }
   }, [mode, preAuthToken, mfaSetup]);
 
+  // Verifies the 6-digit code (setup enrolls + verifies in one call, verify
+  // just checks it) and, on success, AuthContext already has the access
+  // token saved — so we just navigate home.
   async function submit(e) {
     e.preventDefault();
     setError(''); setBusy(true);

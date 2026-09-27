@@ -5,12 +5,16 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import TrendChart from '../components/TrendChart';
 
+// Fetches and renders the visit history for one patientRef: a trend chart
+// (delegated to TrendChart) plus a compact table of recent CBC values.
 export default function PatientHistory({ patientRef }) {
   const [reports, setReports] = useState(null);
   const [err, setErr] = useState('');
 
   useEffect(() => {
     if (!patientRef) return;
+    // `active` guards against setting state after the effect is cleaned up
+    // (e.g. patientRef changes again before this fetch resolves).
     let active = true;
     setReports(null); setErr('');
     api.get(`/patients/${encodeURIComponent(patientRef)}/history`)

@@ -15,6 +15,8 @@ const EMPTY_META = {
   district: '', province: '', latitude: '', longitude: '',
 };
 
+// Top-level page component; owns all form/result state for a single
+// assessment and passes slices of it down to the child components below.
 export default function DoctorPortal() {
   const [meta, setMeta] = useState(EMPTY_META);
   const [cbc, setCbc] = useState({});
@@ -42,9 +44,12 @@ export default function DoctorPortal() {
     return out;
   }
 
+  // Validate, build the payload, and call the prediction endpoint. On success,
+  // stores the result and bumps historyKey so PatientHistory refetches.
   async function predict() {
     setError('');
     const cbcNums = numericCbc();
+    // Minimal client-side validation: need a patient reference and at least one CBC value.
     if (!meta.patientRef.trim()) { setError('Enter a patient reference.'); return; }
     if (Object.keys(cbcNums).length === 0) { setError('Enter at least one CBC value (or scan a report).'); return; }
 
@@ -71,6 +76,8 @@ export default function DoctorPortal() {
     }
   }
 
+  // Records the doctor's confirmed diagnosis for a prediction (passed down to
+  // PredictionResult, which is the only place this is called from).
   async function confirmDiagnosis(predictionId, condition, notes) {
     await api.post(`/predictions/${predictionId}/confirm`, { confirmedCondition: condition, notes });
   }

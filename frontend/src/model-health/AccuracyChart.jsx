@@ -4,10 +4,12 @@
 // are on different scales. The dashed line marks the round the protocol
 // selected by validation loss; when it is round 0, federation did not improve
 // on the starting model. These are validation values, not the frozen test set.
+// recharts: charting library used for the accuracy/loss line chart below.
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 
+// Short label identifying a federated run in the run-picker dropdown.
 export function runLabel(r) {
   if (!r) return '';
   const enc = r.encryption === 'paillier' ? ` · Paillier ${r.key_bits}` : '';
@@ -27,6 +29,8 @@ export default function AccuracyChart({ history, runId, onRunChange }) {
     loss: p.loss != null ? +p.loss.toFixed(4) : null,
   }));
   const accs = data.map((d) => d.accuracy).filter((x) => x != null);
+  // Zoom the accuracy y-axis to the data's range (with a small padding margin)
+  // instead of the full 0-100%, so small round-to-round changes are visible.
   const lo = Math.max(0, Math.floor(Math.min(...accs) - 3));
   const hi = Math.min(100, Math.ceil(Math.max(...accs) + 2));
   const selected = history.run?.selected_round;
