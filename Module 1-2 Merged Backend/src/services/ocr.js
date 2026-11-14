@@ -5,9 +5,16 @@
 //                        `tesseract` binary (TESSERACT_PATH; 501 if missing)
 //   * parseCbcFromText() extracts the 10 model features AND the unit string
 //                        printed next to each value, e.g. WBC 9,010 "/mm3".
-// Units are returned exactly as printed; the API converts them with the
-// exported normalize_units table and rejects anything it does not accept, so
+// Units are returned as printed (only a leading multiplication sign and
+// OCR-confusable glyphs are tidied, see repairUnit); the API converts them with
+// the exported normalize_units table and rejects anything it does not accept, so
 // the doctor must confirm or pick a unit instead of the parser guessing one.
+//
+// Two report layouts are supported, and may be mixed line by line:
+//   result-first   "WBC Count   9,010   4000 - 11,000   /mm3"   (IDC)
+//   range-first    "Hb   13 - 18   g/dl   14.6"                 (Chughtai: the normal
+//                  value and unit columns come BEFORE the result column)
+// A "low - high" pair is always a reference range, never the result.
 // ---------------------------------------------------------------------------
 const fs = require('fs');
 const { execFile } = require('child_process');
@@ -17,6 +24,9 @@ const { ocr: ocrConfig } = require('../config');
 const { FEATURES, unitFactor, inRange, normalizeUnit } = require('../contract');
 
 const TARGET_WIDTH = 3300; // ~2x a 150-dpi A4 scan; phone photos are already this wide
+// Low-res web renders (~700px) need ~4.5x to reach TARGET_WIDTH; at 3x Tesseract
+// misreads digits and units (Hct 44 read as 34, g/dl read as "afdi").
+const MAX_UPSCALE = 5;
 
 // Label patterns per feature. Longer/more specific labels come first so that
 // "Mean corpuscular haemoglobin concentration" is MCHC, not MCH or HGB.
@@ -40,22 +50,38 @@ const LINE_EXCLUSIONS = {
   RBC: /nucleated|\bnrbc\b/i,
 };
 
-// Unit strings as printed on CBC reports. Anything matched is returned verbatim;
-// whether it is ACCEPTED is decided by the contract (unitFactor), not here.
+// Unit strings as printed on CBC reports. Whether a match is ACCEPTED is decided by
+// the contract (unitFactor), not here. The "garbled" alternatives exist only for
+// glyphs Tesseract commonly confuses inside a printed unit (never for guessing a unit
+// from the value): ^ read as * ° or 7; "/l" read as "/1", "/I" or "A"; the l of g/dl and
+// fl read as 1/I/i; the leading "/" of /mm3 read as é or f. repairUnit() maps them back.
 const VOL = '(?:[uµμ]\\s*l|c?mm\\s*\\^?\\s*3|c?mm³|cmm|cumm|l)';
 const UNIT_RE = new RegExp([
-  `x?\\s*10\\s*[\\^*]?\\s*(?:12|3|6|9|³|⁶|⁹)\\s*\\/\\s*${VOL}`,
+  `[x×]?\\s*10\\s*[\\^*]?\\s*(?:12|3|6|9|³|⁶|⁹)\\s*\\/\\s*${VOL}`,
+  // garbled x10^9/L and x10^12/L (per litre is the only denominator these powers use)
+  '[x×]?\\s*10\\s*[\\^*°º˚\'7]?\\s*(?:12|9)\\s*(?:[\\/\\\\](?:[lL1I!|](?![\\d.]))?|A\\b)',
   `(?:mil(?:lion)?s?|thou(?:sand)?s?|m|k)\\s*\\/\\s*${VOL}`,
   `cells\\s*\\/\\s*${VOL}`,
   `\\/\\s*${VOL}`,
-  'g(?:m|ms)?\\s*\\/\\s*dl',
+  '[éÉf]\\s*c?mm\\s*\\^?\\s*3',
+  'g(?:m|ms)?\\s*\\/\\s*d\\s*[l1I|]',
   'g\\s*\\/\\s*l\\b',
   'l\\s*\\/\\s*l\\b',
-  'f\\s*l\\b',
+  '(?<![a-z])f\\s*[lI1i]\\b',
   'pg\\b',
   '%',
 ].join('|'), 'i');
-const NUMBER_RE = /(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d,])/;
+
+// A reference range ("13 - 18", "4.5-6.5", "(4000 - 11,000)"). Tokens tolerate the digit
+// look-alikes Tesseract produces (S/$ for 5, O for 0) so "38 - S2" is still recognised as
+// a range instead of leaving "38" behind to be mistaken for the result.
+const RANGE_TOKEN = '(?=[\\dSsOo$.,]*\\d)[\\dSsOo$][\\dSsOo$.,]*';
+const RANGE_RE = new RegExp(`(?<![\\w.,])${RANGE_TOKEN}\\s*(?:-|–|—|\\bto\\b)\\s*${RANGE_TOKEN}(?![\\w.,]*\\d)`, 'gi');
+const RANGE_MARK = ' \u0001 '; // stands in for a removed range so the text around it keeps its order
+const MASK = '\u0002'; // overwrites a located unit while the value is searched for
+const UNIT_G = new RegExp(UNIT_RE.source, 'gi');
+// Not preceded by $/S/s: Tesseract's misread of 5/8, where the digit after it is only half the number.
+const NUMBER_RE = /(?<![\d.,$Ss])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d,])/;
 
 /**
  * Prepare an uploaded photo/scan for Tesseract: honour EXIF rotation, grayscale,
@@ -65,7 +91,7 @@ const NUMBER_RE = /(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d
 async function preprocess(inputPath) {
   const image = sharp(inputPath, { failOn: 'error' }).rotate();
   const { width } = await image.metadata();
-  const scale = width ? Math.min(3, Math.max(1, TARGET_WIDTH / width)) : 1;
+  const scale = width ? Math.min(MAX_UPSCALE, Math.max(1, TARGET_WIDTH / width)) : 1;
   const out = `${inputPath}.ocr.png`;
   await image
     .resize({ width: Math.round((width || TARGET_WIDTH) * scale), kernel: 'lanczos3' })
@@ -140,16 +166,43 @@ function readSegment(segment) {
     if (u && u[0].trim().length === bracket[1].trim().length) bracketUnit = u[0].trim();
     text = text.slice(bracket[0].length);
   }
-  const num = text.match(NUMBER_RE);
+  // Reference ranges are never the result. Taking them out first makes both column
+  // orders work: "9,010 4000 - 11,000 /mm3" (result first) and "13 - 18 g/dl 14.6"
+  // (range and unit first). A segment holding only a range has no result on this
+  // line (it sits on another OCR line), so it yields nothing rather than the range's low end.
+  text = text.replace(RANGE_RE, RANGE_MARK);
+  // Locate the units, then mask them so digits inside a unit ("x10^12/L", "/mm3")
+  // can't be read as the result when the unit column comes first.
+  const units = [...text.matchAll(UNIT_G)].map((m) => ({ start: m.index, end: m.index + m[0].length, text: m[0] }));
+  let masked = text;
+  for (const u of units) masked = masked.slice(0, u.start) + MASK.repeat(u.end - u.start) + masked.slice(u.end);
+  const num = masked.match(NUMBER_RE);
   if (!num) return null;
   const value = parseFloat(num[1].replace(/,/g, ''));
-  const after = text.slice(num.index + num[0].length);
-  // Unit right after the value (optionally past an H/L/* flag), else anywhere
-  // later on the segment (after a reference range), else the bracketed one.
-  const direct = after.match(new RegExp(`^\\s*(?:[HL*]\\s+)?(${UNIT_RE.source})`, 'i'));
-  const later = direct ? null : after.match(UNIT_RE);
-  const unit = direct ? direct[1] : later ? later[0] : bracketUnit;
-  return { value, unit: unit ? unit.trim().replace(/\s+/g, ' ') : null };
+  const numEnd = num.index + num[0].length;
+  // Unit right after the value (optionally past an H/L/* flag), else the nearest one
+  // printed before it (range-first layouts), else the first one later on the segment
+  // (after a reference range), else the bracketed one.
+  const next = units.find((u) => u.start >= numEnd);
+  const direct = next && /^s*(?:[HL*]s+)?$/.test(masked.slice(numEnd, next.start)) ? next : null;
+  const earlier = direct ? null : units.filter((u) => u.end <= num.index).pop();
+  const unit = (direct || earlier || next)?.text ?? bracketUnit;
+  return { value, unit: unit ? repairUnit(unit.trim().replace(/s+/g, ' ')) : null };
+}
+
+/**
+ * Tidy a printed unit that is otherwise unambiguous: drop the multiplication sign of
+ * "x10^9/L" (the contract's spelling is 10^9/L) and undo glyph confusions Tesseract makes
+ * in units. Anything else is returned untouched.
+ */
+function repairUnit(unit) {
+  const t = unit.toLowerCase().replace(/\s+/g, '');
+  const power = t.match(/^[x×]?10(?:[^\d/\\a-z]|7)?(9|12)(?:[/\\][l1i!|]?|a)$/);
+  if (power) return `10^${power[1]}/L`;
+  if (/^g(?:m|ms)?\/d[1i|]$/.test(t)) return `${t.slice(0, -1)}l`;
+  if (/^f[1i]$/.test(t)) return 'fl';
+  if (/^[éf]c?mm\^?3$/.test(t)) return `/${t.slice(1)}`;
+  return unit;
 }
 
 /**

@@ -7,6 +7,7 @@
 // tests/test_integration_contract.py and frontend/tests/contract.test.mjs
 // cross-check all three.
 import contract from './cbcContract.json' with { type: 'json' };
+import { patientRefError as fhPatientRefError } from './patientRef.js';
 
 export { contract };
 export const MODEL_NAME = contract.model_name;
@@ -162,6 +163,11 @@ const LOOKS_LIKE_IDENTIFIER = [
 
 /** Error message for a patient reference, or '' when it is acceptable. */
 export function patientRefError(raw) {
+  return fhPatientRefError(raw); // FH-XXXX-XXXX format (lib/patientRef.js), same rules as the API
+}
+// Pre-FH free-form rule, kept only for reference.
+// eslint-disable-next-line no-unused-vars
+function legacyPatientRefError(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return 'Enter the pseudonymous patient reference';
   if (s.length > 128) return 'Patient reference is too long (max 128 characters)';

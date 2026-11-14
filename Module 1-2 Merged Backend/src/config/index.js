@@ -57,6 +57,34 @@ module.exports = {
     url: (process.env.INFERENCE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, ''),
     timeoutMs: parseInt(process.env.INFERENCE_TIMEOUT_MS || '20000', 10),
     apiKey: process.env.INFERENCE_API_KEY || '',
+    // Second inference process serving the backup model bundle. When the primary
+    // is unreachable, times out or has no model, requests go here instead
+    // (services/inferenceClient.js). Empty = no replica configured.
+    fallbackUrl: (process.env.INFERENCE_FALLBACK_URL || '').replace(/\/+$/, ''),
+    // After a primary failure, skip straight to the fallback for this long.
+    breakerMs: parseInt(process.env.INFERENCE_BREAKER_MS || '15000', 10),
+  },
+
+  // Local Whisper speech-to-text service (Module 6 Domain API/speech_service.py).
+  speech: {
+    url: (process.env.SPEECH_URL || 'http://127.0.0.1:8002').replace(/\/+$/, ''),
+    timeoutMs: parseInt(process.env.SPEECH_TIMEOUT_MS || '120000', 10),
+  },
+
+  // Browser origins allowed to call the API. Empty in development = any origin;
+  // in production the list is required (comma-separated, e.g. https://fedhealth.example).
+  corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
+
+  // Self-registered accounts stay locked until an admin approves their proof document.
+  requireProofApproval: (process.env.REQUIRE_PROOF_APPROVAL || 'true').toLowerCase() !== 'false',
+
+  // Credential endpoints (register, login, MFA verify): attempts per IP per 15 minutes.
+  authRateLimitMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '30', 10),
+
+  // Per-IP ceiling across the whole API (credential endpoints have a tighter one).
+  rateLimit: {
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
+    max: parseInt(process.env.RATE_LIMIT_MAX || '600', 10),
   },
 
   // Image OCR: the tesseract binary (UB-Mannheim build on Windows) and its language.

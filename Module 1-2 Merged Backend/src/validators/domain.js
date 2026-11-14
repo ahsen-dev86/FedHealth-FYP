@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 const { z } = require('zod');
 const { CLASSES, contract } = require('../contract');
+const PatientRef = require('../contract/patientRef');
 
 const classEnum = z.enum(CLASSES);
 
@@ -20,7 +21,16 @@ const LOOKS_LIKE_IDENTIFIER = [
   [/^(\+?92|0)3\d{2}-?\d{7}$/, 'a phone number'],
   [/^\d{10,}$/, 'a long ID/phone number'],
 ];
-const patientRef = z.string().trim()
+// New reports must carry a FedHealth patient ID (FH-XXXX-XXXX with a valid
+// check character) or a LIMS HMAC token; see contract/patientRef.js.
+const patientRef = z.string({ message: 'Enter the patient ID (FH-XXXX-XXXX) or generate a new one' })
+  .transform(PatientRef.normalize).superRefine((s, ctx) => {
+  const problem = PatientRef.refError(s);
+  if (problem) ctx.addIssue({ code: 'custom', message: problem });
+});
+
+// Lookups (history) also accept references stored before the FH format existed.
+const patientRefLookup = z.string().trim()
   .min(1, 'Enter the pseudonymous patient reference')
   .max(128, 'Patient reference is too long (max 128 characters)')
   .refine((s) => !s.includes('@'), 'Use the pseudonymous patient reference, not an email address')
@@ -142,5 +152,5 @@ const symptomsBody = z.object({ text: z.string().trim().min(1, 'text is required
 
 module.exports = {
   reportBody, predictExistingBody, confirmBody, clusterQuery, alertQuery,
-  registerModelBody, labBody, symptomsBody, patientRef, PATIENT_REF,
+  registerModelBody, labBody, symptomsBody, patientRef, patientRefLookup, PATIENT_REF,
 };

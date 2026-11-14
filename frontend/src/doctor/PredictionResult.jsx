@@ -5,7 +5,9 @@
 // Research-only rule flags are disabled in inference and never shown as model
 // output.
 import { useState } from 'react';
-import { TriangleAlert, CircleCheck, Info, Send } from 'lucide-react';
+import { TriangleAlert, CircleCheck, Info, Send, ShieldAlert, Database } from 'lucide-react';
+import ExplanationPanel from '../components/ExplanationPanel';
+import { RecommendationsCard } from './Recommendations';
 import ConfidenceScores from '../components/ConfidenceScores';
 import RuleFlag from '../components/RuleFlag';
 import { CLASSES, NOT_MODEL_INPUTS } from '../lib/contract';
@@ -48,6 +50,8 @@ export default function PredictionResult({ result, onConfirm }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [confirmed, setConfirmed] = useState(prediction?.confirmed_condition || null);
+  const [dataset, setDataset] = useState(null); // { added, duplicate } once confirmed
+  const serving = result?.serving || {};
 
   // Sends the doctor's chosen condition (may differ from the model's top score)
   // to the parent, which persists it as the authoritative diagnosis.
@@ -55,7 +59,8 @@ export default function PredictionResult({ result, onConfirm }) {
     if (!choice || !prediction?.id) return;
     setBusy(true); setErr('');
     try {
-      await onConfirm(prediction.id, choice, notes);
+      const saved = await onConfirm(prediction.id, choice, notes);
+      setDataset(saved?.dataset || null);
       setConfirmed(choice);
     } catch (e) {
       setErr(e.message);
@@ -84,6 +89,18 @@ export default function PredictionResult({ result, onConfirm }) {
         </Alert>
       )}
 
+      {serving.servedBy === 'backup' && (
+        <Alert className="mb-3.5 border-warning/50 bg-warning/5" data-testid="backup-served">
+          <ShieldAlert className="text-warning" />
+          <AlertTitle>Scored by the backup model</AlertTitle>
+          <AlertDescription>
+            The primary model was unavailable, so the fallback model answered instead of failing
+            {serving.failoverReason ? ` (${serving.failoverReason})` : ''}. It is an independently trained model for the same
+            four conditions; its version is shown below. The failover is recorded in the audit log.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">Model confidence (4 classes)</div>
         {inf?.top_condition && (
@@ -94,7 +111,7 @@ export default function PredictionResult({ result, onConfirm }) {
       </div>
       <div className="mt-1.5 mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground" data-testid="model-version">
         <Badge variant="outline" className="font-mono">{inf?.model_name || model.name}</Badge>
-        <Badge variant="outline" className="font-mono">{inf?.model_version || model.version}</Badge>
+        <Badge variant="outline" className="h-auto max-w-full font-mono break-all whitespace-normal">{inf?.model_version || model.version}</Badge>
         {inf?.mode && <span>{inf.mode.replace(/_/g, ' ')}</span>}
         {inf?.calibration?.method && <span>· calibrated ({inf.calibration.method.replace(/_/g, ' ')})</span>}
         {inf?.inference_ms != null && <span>· {inf.inference_ms} ms</span>}
@@ -122,6 +139,11 @@ export default function PredictionResult({ result, onConfirm }) {
         </Alert>
       )}
 
+      <ExplanationPanel explanation={result?.explanation} scores={scores} />
+
+      <RecommendationsCard guidance={result?.recommendations}
+                           context={{ ref: result?.report?.patient_ref, top: inf?.top_condition, score: inf?.top_confidence?.toFixed(4) }} />
+
       <RuleFlag flags={result?.rule_flags || inf?.rule_flags} />
 
       {alerts.length > 0 && (
@@ -143,7 +165,19 @@ export default function PredictionResult({ result, onConfirm }) {
             <Alert className="border-success/30">
               <CircleCheck className="text-success" />
               <AlertTitle>Diagnosis confirmed by doctor</AlertTitle>
-              <AlertDescription className="text-foreground">{conditionLabel(confirmed)}</AlertDescription>
+              <AlertDescription className="text-foreground">
+                {conditionLabel(confirmed)}
+                {dataset && (
+                  <span className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="dataset-note">
+                    <Database className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    {dataset.added
+                      ? 'Added to the confirmed-case dataset for the next training round.'
+                      : dataset.duplicate
+                        ? 'An identical record (same CBC values and diagnosis) is already in the dataset, so it was not added again.'
+                        : 'Recorded.'}
+                  </span>
+                )}
+              </AlertDescription>
             </Alert>
           ) : (
             <>
@@ -153,14 +187,14 @@ export default function PredictionResult({ result, onConfirm }) {
               </p>
               <div className="flex flex-wrap items-start gap-2">
                 <Select value={choice} onValueChange={setChoice}>
-                  <SelectTrigger className="w-[220px]" aria-label="Confirmed condition">
+                  <SelectTrigger className="w-full sm:w-[220px]" aria-label="Confirmed condition">
                     <SelectValue placeholder="Select a condition…">{(v) => (v ? conditionLabel(v) : 'Select a condition…')}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {CLASSES.map((k) => <SelectItem key={k} value={k}>{conditionLabel(k)}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Button disabled={!choice || busy} onClick={confirm}>
+                <Button className="h-9 w-full sm:w-auto" disabled={!choice || busy} onClick={confirm}>
                   {busy ? 'Saving…' : 'Confirm'}
                 </Button>
               </div>

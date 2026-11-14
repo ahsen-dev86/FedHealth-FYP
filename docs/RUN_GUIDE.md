@@ -8,7 +8,9 @@ Everything below was tested on this machine on 2026-09-26.
 | Piece | Where | Starts how |
 |---|---|---|
 | PostgreSQL 18 + PostGIS (database `fedhealth`) | Windows service `postgresql-x64-18` | automatically with Windows |
-| AI model service (Flask, seed-42 model) | `Module 6 Domain API/app.py` in `.venv` | by the start script, port **8000** |
+| AI model service (Flask, seed-42 model, seed-52 backup loaded beside it) | `Module 6 Domain API/app.py` in `.venv` | by the start script, port **8000** |
+| Backup model replica (seed-52 model, separate process) | same app, `FEDHEALTH_REPLICA_ROLE=backup` | by the start script, port **8001** |
+| Speech-to-text for dictation (Whisper `small`, local) | `Module 6 Domain API/speech_service.py` in `.venv-speech` | by the start script, port **8002** (optional) |
 | Backend API (Node/Express) | `Module 1-2 Merged Backend` | by the start script, port **4000** |
 | Website (React/Vite) | `frontend` | by the start script, port **5173** |
 | Tesseract OCR 5.4 | `C:\Program Files\Tesseract-OCR` | used by the backend when a report image is uploaded |
@@ -20,7 +22,7 @@ Secrets (database password, JWT key, API key) are in the git-ignored files `.env
 
 **Easiest:** in File Explorer, open the `FedHealth FYP` folder and double-click **`start-fedhealth.cmd`**.
 Wait until it prints four `up` lines (about 20–40 seconds: loading the AI model takes the longest).
-Your browser opens <http://localhost:5173>.
+Your browser opens <http://localhost:5173>, which is the landing page; pick a portal card to sign in.
 
 **From VS Code (same result):**
 1. VS Code → *File → Open Folder…* → `C:\Users\Ahsan\Desktop\FedHealth FYP`.
@@ -63,6 +65,20 @@ You can also register new accounts on the login page ("Register"). NIH officials
 `@nih.org.pk` or `@gov.pk` address (no email is sent). The QR code shown after registering is
 scanned with an authenticator app; below it is the key for `node scripts/totp-code.js <KEY>`.
 
+**New accounts need proof and approval.** Registration asks for one document, once: a medical
+licence (doctor), a government employee card (health official), a laboratory employee card (lab
+engineer) or a certificate of registration (NGO), as PDF/PNG/JPEG/WebP up to 5 MB. The account
+cannot sign in until an administrator opens the document in the **Admin Console** and approves it
+(rejecting requires a reason, which the applicant sees). Accounts created before this feature are
+treated as approved. `REQUIRE_PROOF_APPROVAL=false` in the backend `.env` turns the check off for a
+closed demo only.
+
+**Patient IDs.** Each patient has a FedHealth ID like `FH-7K3M-9QAZ` (no name, CNIC or phone).
+Press **New patient** to issue one and write it on the patient's card; type it on later visits to
+open their history. The last character is a check character, so a typo is refused instead of
+opening an empty history. Older references were re-keyed by `scripts/migrate-patient-refs.js`;
+the old-to-new mapping is kept in the `patient_ref_migrations` table.
+
 ## 3. A demonstration path (about 10 minutes)
 
 1. **Doctor** → Doctor Portal. Patient reference `pt-demo-001`, district Lahore. Enter the example
@@ -103,8 +119,9 @@ Start FedHealth first (step 1) for the live tests. From the `FedHealth FYP` fold
 |---|---|---|
 | Python: ML, federation, encryption, contract | `.venv\Scripts\python.exe -m pytest` | all pass (takes ~4 min) |
 | Backend unit + database tests | `cd "Module 1-2 Merged Backend"; npm test` | all pass |
-| API acceptance (login+MFA, predict, OCR, confirm, alerts, Model Health) | `npm run test:e2e -- --out ..\run-results\acceptance.md` | `60 passed, 0 failed` |
-| Robustness matrix (130+ wrong/absurd inputs) | `npm run test:robustness -- --out ..\run-results\robustness.md` | `133 of 133 passed` |
+| API acceptance (login+MFA, predict, OCR, confirm, alerts, Model Health) | `npm run test:e2e -- --out ..\run-results\acceptance.md` | `64 passed, 0 failed` |
+| Robustness matrix (130+ wrong/absurd inputs) | `npm run test:robustness -- --out ..\run-results\robustness.md` | `135 of 135 passed` |
+| Production features (patient IDs, explanation, guidance, dataset, failover drill, proof approval, admin NGO access, dictation) | `node scripts\e2e-production.js --audio <a .wav clip>` | `37/37 checks passed` |
 | Frontend unit tests | `cd frontend; npm test` | all pass |
 | Frontend build | `cd frontend; npm run build` | `✓ built` |
 | Browser tests (text only) | `cd frontend; npx playwright test` | all pass (live tests need step 1) |
@@ -121,7 +138,10 @@ The API tests create throwaway `e2e-*` accounts and records each run; that is ex
 | "The analysis service is not reachable" after *Analyze CBC* | The AI model service stopped: `-Stop` then `-Start -Frontend`; check `run-results\logs\inference.log`. |
 | Database errors / backend exits at start | Services → `postgresql-x64-18` must be *Running* (Start it). |
 | MFA code rejected | Codes change every 30 s (the key stays the same; keep the authenticator time-based, not counter-based). Use the code on screen now, or `npm run demo:code`. If fresh codes fail, turn on automatic date/time on the phone and laptop. |
-| "Too many attempts" at login | Security rate limit (30 tries per 15 min). Wait 15 minutes. |
+| "Too many attempts" at login | Security rate limit (30 tries per 15 min, `AUTH_RATE_LIMIT_MAX`). Wait 15 minutes. Running the API test scripts several times in a row hits it too: restart the backend. |
+| "Your account is awaiting verification" | Sign in as an administrator, open **Admin Console**, review the account's proof, approve it. |
+| A result says "Scored by the backup model" | The primary model was down, or a failover drill is running. Admin Console → Model serving shows which and has the drill switch; see `run-results\logs\inference.log`. |
+| Dictation says the speech service is offline | It falls back to the browser's own recognition. To restore Whisper, check `run-results\logs\speech.log`; the first start downloads the model (about 500 MB). |
 | Account locked after wrong passwords | Wait 15 minutes, or `npm run demo:users -- --reset` for the demo accounts. |
 | Scores look random and a "Demo mode — mock API" badge shows | The site runs the mock: stop it and start with the script (not `npm run dev`). |
 | PowerShell refuses to run the script | Always call it as `powershell -ExecutionPolicy Bypass -File tools\run-local.ps1 ...` (as above). |
@@ -134,6 +154,9 @@ The API tests create throwaway `e2e-*` accounts and records each run; that is ex
    py -3.12 -m venv .venv
    .venv\Scripts\python.exe -m pip install -r requirements-test.txt
    cd "Module 1-2 Merged Backend"; npm install; cd ..\frontend; npm install; cd ..
+   # Optional, for voice dictation: a separate environment for the speech model
+   py -3.12 -m venv .venv-speech
+   .venv-speech\Scripts\python.exe -m pip install -r requirements-speech.txt
    ```
 3. Create `Module 1-2 Merged Backend\.env` from `.env.example` (random `PGPASSWORD`, `JWT_SECRET`,
    `PATIENT_REF_HMAC_KEY`, `INFERENCE_API_KEY`) and a root `.env` with `PG_SUPERUSER=postgres` and

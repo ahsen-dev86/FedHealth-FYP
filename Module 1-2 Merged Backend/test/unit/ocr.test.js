@@ -114,3 +114,67 @@ test('HbA2 and lymphocytes are not model features', () => {
 Lymphocytes 25 %`);
   assert.equal(r.extractedCount, 0);
 });
+
+// --- range-first layout (Chughtai-style): NORMAL VALUE and UNIT columns precede the result ---
+
+test('range-first layout: the result column, not the reference range, is the value', () => {
+  const r = parseCbcFromText(`Hb 13 - 18 g/dl 14.6
+Total RBC 4.5 - 6.5 x10^12/l 5.3
+Hct 38 - 52 % 44
+MCV 75 - 95 fl 82
+MCH 26 - 32 pg 27
+MCHC 30 - 35 g/dl 33
+Platelet Count 150 - 400 x10^9/l 205
+WBC Count (TLC) 4 - 11 x10^9/l 11.4
+Neutrophils 40 - 75 % 58
+Lymphocytes 20 - 50 % 29`);
+  assert.deepEqual(r.cbc, { WBC: 11.4, RBC: 5.3, HGB: 14.6, HCT: 44, MCV: 82, MCH: 27, MCHC: 33, PLT: 205, NEUTp: 58 });
+  // x10^9/l and x10^12/l are printed with a multiplication sign; the contract spells them 10^9/L, 10^12/L
+  assert.deepEqual([r.units.WBC, r.units.RBC, r.units.PLT], ['10^9/L', '10^12/L', '10^9/L']);
+  assert.ok(Object.keys(r.cbc).every((f) => r.unitStatus[f] === 'accepted'));
+  assert.deepEqual(r.canonical, r.cbc); // already canonical, nothing converted
+  assert.deepEqual(r.missing, ['RDW']);
+});
+
+test('range-first layout: ranges written without spaces or with "to" are still ranges', () => {
+  const r = parseCbcFromText(`Hb 13-18 g/dl 14.6
+MCV (75-95) fl 82
+WBC 4 to 11 x10^9/l 11.4`);
+  assert.deepEqual([r.cbc.HGB, r.cbc.MCV, r.cbc.WBC], [14.6, 82, 11.4]);
+});
+
+test('a range with no result on the line gives no value rather than the range low end', () => {
+  const r = parseCbcFromText('Hb 13 - 18 g/dl');
+  assert.ok(!('HGB' in r.cbc));
+  assert.deepEqual(r.missing.includes('HGB'), true);
+});
+
+test('real Tesseract output of a range-first report: readable values are right, garbled ones are withheld', () => {
+  // Verbatim Tesseract lines (low-res scan): "$2" is an 82 it could not read,
+  // "a/di" is g/dl, "$- il" is "4 - 11", "x10°9A" is x10^9/L.
+  const r = parseCbcFromText(`Hb 13 - 18 a/di 14.6
+Total RBC 45-65 x10712/ 5.3
+Hct 38 - $2 % 44
+MCV 75 - 9S fi $2
+MCH 26 - 32 Pg 27
+MCHC 30 - 35 g/dl 33
+Platelet Count 150 - 400 x10°9A 205
+WBC Count (TLC) $- il x10°9/ 11.4
+Neutrophils 40 - 75 % 58`);
+  assert.deepEqual(r.cbc, { WBC: 11.4, RBC: 5.3, HGB: 14.6, HCT: 44, MCH: 27, MCHC: 33, PLT: 205, NEUTp: 58 });
+  assert.ok(!('MCV' in r.cbc), 'an unreadable value ($2) must not become 2');
+  assert.equal(r.units.HGB, null); // garbled unit: the doctor picks it, nothing is guessed
+  assert.equal(r.unitStatus.HGB, 'no_unit_printed');
+  assert.deepEqual([r.units.WBC, r.units.RBC, r.units.PLT], ['10^9/L', '10^12/L', '10^9/L']);
+  assert.equal(r.units.MCH, 'Pg');
+  assert.equal(r.unitStatus.MCH, 'accepted');
+});
+
+test('result-first layout is unchanged, including a mis-read leading slash on /mm3', () => {
+  const r = parseCbcFromText(`WBC Count 9,010 4000 - 11,000 0 /mm3
+Platelet Count 147,000 140,000 - 425,000 @ émm3
+Haemoglobin 12.4 14.0 - 18.0@ g/dL
+RDW-CV 13 11-16% %`);
+  assert.deepEqual([r.cbc.WBC, r.cbc.PLT, r.cbc.HGB, r.cbc.RDW], [9010, 147000, 12.4, 13]);
+  assert.deepEqual([r.units.WBC, r.units.PLT, r.units.HGB, r.units.RDW], ['/mm3', '/mm3', 'g/dL', '%']);
+});

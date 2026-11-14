@@ -9,13 +9,34 @@
 const express = require('express');
 const { z } = require('zod');
 const { requireAuth } = require('../middleware/requireAuth');
-const { requirePermission } = require('../middleware/rbac');
+const { requirePermission, requireAnyPermission } = require('../middleware/rbac');
 const { auditAction } = require('../middleware/audit');
 const { asyncHandler, HttpError } = require('../middleware/errors');
 const Ngos = require('../models/ngos');
 const SupplyRequests = require('../models/supplyRequests');
 
 const router = express.Router();
+
+// An NGO manages its own profile ('help:manage_own'). An administrator
+// ('help:manage_all') reaches the same routes for ANY NGO by naming it with
+// ?ngo=<uuid>; without that right the parameter is ignored, so an NGO account
+// can never address another NGO.
+const manage = requireAnyPermission('help:manage_own', 'help:manage_all');
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** The NGO this request acts on: the caller's own, or the one an admin named. */
+async function targetNgo(req, { create = true } = {}) {
+  if (req.permissions.has('help:manage_all') && !req.permissions.has('help:manage_own')) {
+    const id = String(req.query.ngo || '');
+    if (!UUID.test(id)) throw new HttpError(400, 'Choose the NGO to manage (?ngo=<id>)');
+    const ngo = await Ngos.getById(id);
+    if (!ngo) throw new HttpError(404, 'NGO not found');
+    return ngo;
+  }
+  return create
+    ? Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email)
+    : Ngos.getByUserId(req.user.id);
+}
 
 const profileSchema = z.object({
   name: z.string().min(2).max(160).optional(),
@@ -52,10 +73,26 @@ router.get('/ngos', asyncHandler(async (req, res) => {
   res.json(await Ngos.listPublic());
 }));
 
-router.get('/ngos/me', requireAuth, requirePermission('help:manage_own'),
+// --- Administrator: every NGO, and the verified badge ------------------------
+router.get('/admin/ngos', requireAuth, requirePermission('help:manage_all'),
   asyncHandler(async (req, res) => {
-    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
-    res.json(ngo);
+    res.json(await Ngos.listForAdmin());
+  }));
+
+router.post('/admin/ngos/:id/verified', requireAuth,
+  auditAction('NGO_SET_VERIFIED', (req) => ({ type: 'ngo', id: req.params.id })),
+  requirePermission('help:manage_all'),
+  asyncHandler(async (req, res) => {
+    if (!UUID.test(req.params.id)) throw new HttpError(400, 'id must be a UUID');
+    const { verified } = z.object({ verified: z.boolean() }).strict().parse(req.body);
+    const updated = await Ngos.setVerified(req.params.id, verified);
+    if (!updated) throw new HttpError(404, 'NGO not found');
+    res.json(updated);
+  }));
+
+router.get('/ngos/me', requireAuth, manage,
+  asyncHandler(async (req, res) => {
+    res.json(await targetNgo(req));
   }));
 
 router.get('/ngos/:id', asyncHandler(async (req, res) => {
@@ -76,36 +113,36 @@ router.get('/requests', asyncHandler(async (req, res) => {
 
 // --- NGO self-service (own profile + requests only) --------------------------
 
-router.put('/ngos/me', requireAuth, requirePermission('help:manage_own'),
-  auditAction('NGO_UPDATE_PROFILE', () => ({ type: 'ngo' })),
+router.put('/ngos/me', requireAuth, manage,
+  auditAction('NGO_UPDATE_PROFILE', (req, res) => ({ type: 'ngo', id: res.locals.ngoId })),
   asyncHandler(async (req, res) => {
     const data = profileSchema.parse(req.body);
-    await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
-    const updated = await Ngos.updateForUser(req.user.id, data);
-    res.json(updated);
+    const ngo = await targetNgo(req);
+    res.locals.ngoId = ngo.id;
+    res.json(await Ngos.updateById(ngo.id, data));
   }));
 
-router.get('/ngos/me/requests', requireAuth, requirePermission('help:manage_own'),
+router.get('/ngos/me/requests', requireAuth, manage,
   asyncHandler(async (req, res) => {
-    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
+    const ngo = await targetNgo(req);
     res.json(await SupplyRequests.listForNgo(ngo.id));
   }));
 
-router.post('/ngos/me/requests', requireAuth, requirePermission('help:manage_own'),
+router.post('/ngos/me/requests', requireAuth, manage,
   auditAction('NGO_CREATE_REQUEST', (req, res) => ({ type: 'supply_request', id: res.locals.requestId })),
   asyncHandler(async (req, res) => {
     const data = requestSchema.parse(req.body);
-    const ngo = await Ngos.getOrCreateForUser(req.user.id, req.user.full_name, req.user.email);
+    const ngo = await targetNgo(req);
     const created = await SupplyRequests.create(ngo.id, data);
     res.locals.requestId = created.id;
     res.status(201).json(created);
   }));
 
-router.patch('/ngos/me/requests/:id', requireAuth, requirePermission('help:manage_own'),
+router.patch('/ngos/me/requests/:id', requireAuth, manage,
   auditAction('NGO_UPDATE_REQUEST', (req) => ({ type: 'supply_request', id: req.params.id })),
   asyncHandler(async (req, res) => {
     const data = requestUpdateSchema.parse(req.body);
-    const ngo = await Ngos.getByUserId(req.user.id);
+    const ngo = await targetNgo(req, { create: false });
     if (!ngo) throw new HttpError(404, 'No NGO profile yet');
     const updated = await SupplyRequests.updateOwned(req.params.id, ngo.id, data);
     if (!updated) throw new HttpError(404, 'Request not found');

@@ -54,11 +54,13 @@ test('printed units map to the equivalent form option', () => {
 });
 
 test('patient reference and age rules match the API', () => {
-  assert.equal(patientRefError('pt-hash-001'), '');
+  assert.equal(patientRefError('FH-0000-0000'), '');
+  assert.match(patientRefError('pt-hash-001'), /FH-XXXX-XXXX/);
+  assert.match(patientRefError('FH-0000-0001'), /check character/);
   assert.match(patientRefError('35202-1234567-1'), /CNIC/);
   assert.match(patientRefError('0300-1234567'), /phone/);
   assert.match(patientRefError('ali@example.com'), /email/);
-  assert.match(patientRefError('<script>'), /only letters/);
+  assert.match(patientRefError('<script>'), /FH-XXXX-XXXX/);
   assert.match(patientRefError('   '), /Enter the/);
   assert.equal(ageError(''), '');
   assert.equal(ageError('34'), '');
@@ -66,7 +68,7 @@ test('patient reference and age rules match the API', () => {
 });
 
 test('mock client: four-class result for valid input, same 400s for bad input', async () => {
-  const ok = await api.post('/predict', { patientRef: 'pt-1', cbc: { HGB: 12.4, PLT: 147000 }, units: { HGB: 'g/dL', PLT: '/mm3' } });
+  const ok = await api.post('/predict', { patientRef: 'FH-0000-0000', cbc: { HGB: 12.4, PLT: 147000 }, units: { HGB: 'g/dL', PLT: '/mm3' } });
   assert.deepEqual(Object.keys(ok.inference.scores), CLASSES);
   assert.match(ok.screening.disclaimer, /not produced by the model/);
   for (const [cbc, units, re] of [
@@ -75,7 +77,7 @@ test('mock client: four-class result for valid input, same 400s for bad input', 
     [{ HGB: 12.4 }, {}, /Declare the unit/],
     [{}, {}, /At least one/],
   ]) {
-    await assert.rejects(api.post('/predict', { patientRef: 'pt-1', cbc, units }), (e) => e.status === 400 && re.test(e.message));
+    await assert.rejects(api.post('/predict', { patientRef: 'FH-0000-0000', cbc, units }), (e) => e.status === 400 && re.test(e.message));
   }
   await assert.rejects(api.post('/predictions/1/confirm', { confirmedCondition: 'iron_deficiency_anemia' }), (e) => e.status === 400);
   await assert.rejects(api.get('/nih/clusters?condition=cancer'), (e) => e.status === 400);

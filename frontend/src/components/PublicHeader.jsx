@@ -10,13 +10,13 @@ export default function PublicHeader() {
   const { isAuthed } = useAuth();
   return (
     <header className="border-b border-border bg-card">
-      <div className="mx-auto flex h-14 max-w-[1180px] items-center gap-4 px-6">
-        <Link to="/" className="text-base font-bold tracking-tight text-foreground">
+      <div className="mx-auto flex h-14 max-w-[1180px] items-center gap-3 px-4 sm:gap-4 sm:px-6">
+        <Link to="/" className="text-base font-bold tracking-tight text-foreground" aria-label="FedHealth home">
           Fed<span className="text-primary">Health</span>
         </Link>
         <span className="text-sm text-muted-foreground">Help Portal</span>
         <div className="flex-1" />
-        <Button variant="outline" size="sm" nativeButton={false} render={<Link to={isAuthed ? '/' : '/login'} />}>
+        <Button variant="outline" size="sm" nativeButton={false} render={<Link to={isAuthed ? '/app' : '/login'} />}>
           {isAuthed ? 'Back to app' : 'Log in'}
         </Button>
       </div>

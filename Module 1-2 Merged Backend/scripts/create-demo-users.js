@@ -6,6 +6,7 @@
 // run-results/demo-accounts.txt (never commit or share it):
 //   doctor   doctor.demo@fedhealth.test   Doctor Portal
 //   nih      nih.demo@nih.org.pk          Surveillance + Model Health
+//   lab      lab.demo@fedhealth.test      Lab Node dashboard (linked to the Karachi demo lab)
 //   admin    admin.demo@fedhealth.test    everything, incl. audit log
 // Passwords and TOTP keys are random. Sign-in codes: `npm run demo:code`, or
 // add the key to an authenticator app (Google/Microsoft Authenticator).
@@ -20,6 +21,7 @@ const crypto = require('crypto');
 const speakeasy = require('speakeasy'); // TOTP (RFC 6238) library: generates the MFA secret/codes
 const Users = require('../src/models/users');
 const Roles = require('../src/models/roles');
+const Labs = require('../src/models/labs');
 const password = require('../src/auth/password');
 const { pool } = require('../src/db/pool');
 
@@ -27,6 +29,7 @@ const OUT = path.resolve(__dirname, '../../run-results/demo-accounts.txt');
 const ACCOUNTS = [
   { key: 'doctor', email: 'doctor.demo@fedhealth.test', name: 'Dr Demo Doctor', role: 'doctor', org: 'Demo Clinic' },
   { key: 'nih', email: 'nih.demo@nih.org.pk', name: 'Demo Health Official', role: 'nih_official', org: 'NIH (demo)' },
+  { key: 'lab', email: 'lab.demo@fedhealth.test', name: 'Demo Lab Engineer', role: 'lab_tech', org: 'Karachi demo lab', labDistrict: 'Karachi' },
   { key: 'admin', email: 'admin.demo@fedhealth.test', name: 'Demo Admin', role: 'admin', org: 'FedHealth' },
 ];
 
@@ -60,7 +63,9 @@ async function main() {
     const hash = await password.hash(pw);
     if (!user) {
       const role = await Roles.getByName(a.role);
-      user = await Users.create({ email: a.email, fullName: a.name, roleId: role.id, organization: a.org, passwordHash: hash });
+      const lab = a.labDistrict ? (await Labs.listAll()).find((l) => l.district === a.labDistrict) : null;
+      if (a.labDistrict && !lab) throw new Error(`no lab in ${a.labDistrict} to link ${a.email} to (run db:setup to seed the demo labs)`);
+      user = await Users.create({ email: a.email, fullName: a.name, roleId: role.id, organization: a.org, labId: lab?.id, passwordHash: hash });
     } else {
       await Users.setPasswordHash(user.id, hash);
     }

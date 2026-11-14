@@ -5,8 +5,10 @@
 # instead of silently serving an untrained/placeholder model.
 import math
 import os
+import time
 from pathlib import Path
 import sys
+import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fedhealth_ml import schema
 from fedhealth_ml.preprocess import normalize_units
@@ -17,10 +19,19 @@ from fedhealth_ml.artifacts import load_bundle
 RISK_RULE = "leukemia score >= risk_threshold (configurable demo flag, not a clinical decision threshold)"
 
 
+EXPLANATION_METHOD = "exact_shapley_median_baseline"
+EXPLANATION_NOTE = ("Exact Shapley values over the measured CBC values. Each value's contribution is the change "
+                    "in the model's calibrated score when that value replaces the training median, averaged over "
+                    "every combination of the other values. Contributions add up to the score minus the score of "
+                    "a reference record at the training medians. They describe this model, not disease biology.")
+
+
 class UnavailablePredictor:
     """Placeholder used when no verified model artifacts are found; always raises on predict()."""
     mode, version = "unavailable", "untrained"
-    def predict(self, cbc, units):
+    def __init__(self, reason="no verified artifact bundle configured"):
+        self.reason = reason
+    def predict(self, cbc, units, explain=False):
         raise RuntimeError("Train Module 3 and configure a verified four-class artifact bundle")
 
 
@@ -36,14 +47,60 @@ class HybridPredictor:
         if not 0 <= self.threshold <= 1:
             raise ValueError("RISK_THRESHOLD must be between zero and one")
 
-    def predict(self, cbc, units):
+    def explain(self, canonical, scaled):
+        """Exact Shapley attribution of each class score to the measured CBC values.
+
+        The reference ("absent") value of a feature is its training median, which is
+        also what the fitted preprocessor imputes for an unmeasured value. With k
+        measured values the model is evaluated on all 2^k present/absent
+        combinations (k <= 10, so at most 1024 rows in one batch); unmeasured
+        values sit at the median in every row and get a contribution of zero."""
+        start = time.perf_counter()
+        features = schema.FEATURES
+        present = [i for i, f in enumerate(features) if not math.isnan(canonical[f])]
+        k = len(present)
+        baseline = self.prep.transform({f: float("nan") for f in features})[0]
+        masks = np.arange(1 << k)
+        rows = np.repeat(baseline[None, :], len(masks), axis=0)
+        for bit, column in enumerate(present):
+            rows[(masks >> bit) & 1 == 1, column] = scaled[column]
+        proba = self.hybrid.predict_proba(rows)
+        sizes = np.array([bin(m).count("1") for m in masks])
+        fact = [math.factorial(n) for n in range(k + 1)]
+        phi = np.zeros((len(features), len(schema.CLASSES)))
+        for bit, column in enumerate(present):
+            without = masks[(masks >> bit) & 1 == 0]
+            weights = np.array([fact[s] * fact[k - s - 1] / fact[k] for s in sizes[without]])
+            phi[column] = (weights[:, None] * (proba[without | (1 << bit)] - proba[without])).sum(axis=0)
+        medians = [float(v) for v in self.prep.imputer.statistics_]
+        return {
+            "method": EXPLANATION_METHOD,
+            "note": EXPLANATION_NOTE,
+            "baseline_scores": {c: float(v) for c, v in zip(schema.CLASSES, proba[0])},
+            "reference_values": dict(zip(features, medians)),
+            "contributions": {c: {f: float(phi[i, j]) for i, f in enumerate(features)}
+                              for j, c in enumerate(schema.CLASSES)},
+            "measured_features": [features[i] for i in present],
+            "model_evaluations": int(len(masks)),
+            "ms": int((time.perf_counter() - start) * 1000),
+        }
+
+    def predict(self, cbc, units, explain=False):
         """Normalize raw CBC values to canonical units, run the model, and shape the full response payload."""
         canonical = normalize_units(cbc, units=units)
-        p = self.hybrid.predict_proba(self.prep.transform(canonical))[0]
+        scaled = self.prep.transform(canonical)
+        p = self.hybrid.predict_proba(scaled)[0]
+        explanation = None
+        if explain:
+            try:
+                explanation = self.explain(canonical, scaled[0])
+            except Exception as exc:  # an explanation must never cost the clinician the scores
+                explanation = {"method": EXPLANATION_METHOD, "error": f"explanation unavailable: {type(exc).__name__}"}
         scores = {c: float(v) for c, v in zip(schema.CLASSES, p)}
         ranked = sorted(scores.items(), key=lambda kv: -kv[1])
         missing = [f for f in schema.FEATURES if math.isnan(canonical[f])]
         return {"model_name": self.name, "model_version": self.version, "mode": self.mode,
+                "explanation": explanation,
                 "classes": schema.CLASSES, "features": schema.FEATURES,
                 "scores": scores, "ranked": ranked, "top_condition": ranked[0][0],
                 "top_confidence": ranked[0][1], "risk_flag": scores["leukemia"] >= self.threshold,

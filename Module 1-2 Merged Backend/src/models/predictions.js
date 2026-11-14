@@ -20,17 +20,51 @@ async function create({
   topCondition = null, topConfidence = null,
   riskFlag = false, inferenceMs = null,
   ruleFlags = {}, imputedFeatures = [],
+  servedBy = 'primary', explanation = null,
 }, db = null) {
   const { rows } = await run(db)(
     `INSERT INTO predictions
        (lab_report_id, model_id, scores, top_condition, top_confidence, risk_flag, inference_ms,
-        rule_flags, imputed_features)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        rule_flags, imputed_features, served_by, explanation)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [labReportId, modelId, JSON.stringify(scores), topCondition, topConfidence, riskFlag, inferenceMs,
-      JSON.stringify(ruleFlags), JSON.stringify(imputedFeatures)]
+      JSON.stringify(ruleFlags), JSON.stringify(imputedFeatures), servedBy,
+      explanation ? JSON.stringify(explanation) : null]
   );
   return rows[0];
+}
+
+/**
+ * Add a confirmed diagnosis to the training dataset (confirmed_cases), once.
+ * The record is the report's 10 canonical CBC values + the confirmed label;
+ * its SHA-256 (fedhealth_case_hash, computed in SQL) is UNIQUE, so an identical
+ * record from any doctor, lab or visit is never stored twice. If this
+ * prediction was confirmed before with a different label, that earlier record
+ * is retired (is_active = false) so the dataset holds the current label only.
+ * @returns {{added: boolean, duplicate: boolean, recordHash: string}}
+ */
+async function recordConfirmedCase(predictionId, db) {
+  const q = run(db);
+  await q(
+    `UPDATE confirmed_cases c SET is_active = FALSE, updated_at = now()
+       FROM predictions p
+      WHERE p.id = $1 AND c.prediction_id = p.id AND c.label <> p.confirmed_condition AND c.is_active`,
+    [predictionId]);
+  const { rows } = await q(
+    `INSERT INTO confirmed_cases (record_hash, cbc, label, prediction_id, lab_id, confirmed_by,
+                                  model_top_condition, model_version)
+     SELECT fedhealth_case_hash(lr.cbc, p.confirmed_condition), lr.cbc, p.confirmed_condition, p.id,
+            lr.lab_id, p.confirmed_by, p.top_condition, m.version
+       FROM predictions p
+       JOIN lab_reports lr ON lr.id = p.lab_report_id
+       JOIN ml_models m ON m.id = p.model_id
+      WHERE p.id = $1 AND p.confirmed_condition IS NOT NULL
+     ON CONFLICT (record_hash) DO UPDATE SET is_active = TRUE, updated_at = now()
+     RETURNING record_hash, (xmax = 0) AS inserted`,
+    [predictionId]);
+  const row = rows[0];
+  return row ? { added: row.inserted, duplicate: !row.inserted, recordHash: row.record_hash } : { added: false, duplicate: false };
 }
 
 // JOIN ml_models so the caller gets the model's name/version alongside the
@@ -64,4 +98,4 @@ async function confirmByDoctor({ predictionId, doctorId, confirmedCondition, not
   return rows[0];
 }
 
-module.exports = { create, findById, listByReport, confirmByDoctor };
+module.exports = { create, findById, listByReport, confirmByDoctor, recordConfirmedCase };

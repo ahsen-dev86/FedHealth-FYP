@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { Client } = require('pg');
 const { CLASSES, FEATURES } = require('../src/contract');
+const { proofForm, approveByEmail, refFor } = require('./lib/e2eAccounts');
 
 const BASE = (process.env.E2E_BASE_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '');
 const INFER = (process.env.INFERENCE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
@@ -43,7 +44,7 @@ function check(label, cond, detail = '') {
 const randomPassword = () => `E2e-${crypto.randomBytes(12).toString('base64url')}`;
 
 /** Fetch wrapper that logs each call (redacting password/code) and returns { status, data }. */
-async function http(method, route, { token, body, raw, base = BASE, headers = {}, quiet = false } = {}) {
+async function http(method, route, { token, body, raw, form, base = BASE, headers = {}, quiet = false } = {}) {
   const res = await fetch(`${base}${route}`, {
     method,
     headers: {
@@ -51,7 +52,7 @@ async function http(method, route, { token, body, raw, base = BASE, headers = {}
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    body: raw || (body !== undefined ? JSON.stringify(body) : undefined),
+    body: form || raw || (body !== undefined ? JSON.stringify(body) : undefined),
   });
   const data = await res.json().catch(() => ({}));
   if (!quiet) {
@@ -82,8 +83,11 @@ async function enrol(role, email) {
     const login = await http('POST', '/auth/login', { body: { email, password } });
     preAuth = login.data.preAuthToken;
   } else {
+    // A lab engineer's account is tied to one lab (the first seeded lab here).
+    const labId = role === 'lab_tech' ? (await http('GET', '/auth/labs', { quiet: true })).data[0]?.id : undefined;
+    // Sign-up is multipart: the account fields plus a proof-of-role document.
     const reg = await http('POST', '/auth/register', {
-      body: { email, password, fullName: `E2E ${role}`, role, organization: 'FedHealth E2E' },
+      form: proofForm({ email, password, fullName: `E2E ${role}`, role, organization: 'FedHealth E2E', labId }),
     });
     check(`${role} registered, MFA setup required`, reg.status === 201 && reg.data.mfaSetupRequired === true);
     preAuth = reg.data.preAuthToken;
@@ -91,8 +95,17 @@ async function enrol(role, email) {
   const setup = await http('POST', '/auth/mfa/setup', { token: preAuth, body: {} });
   const secret = setup.data.manualKey?.replace(/\s/g, '');
   const verify = await http('POST', '/auth/mfa/verify-setup', { token: preAuth, body: { code: totp(secret) } });
-  check(`${role} MFA enrolled via scripts/totp-code.js`, verify.status === 200 && !!verify.data.accessToken);
-  return { token: verify.data.accessToken, email, password, secret };
+  if (role === 'admin') {
+    check(`${role} MFA enrolled via scripts/totp-code.js`, verify.status === 200 && !!verify.data.accessToken);
+    return { token: verify.data.accessToken, email, password, secret };
+  }
+  // A self-registered account gets no session until its proof is approved.
+  check(`${role} MFA enrolled, no session before proof approval`, verify.status === 200 && verify.data.pendingVerification === true && !verify.data.accessToken);
+  await approveByEmail(email);
+  const login = await http('POST', '/auth/login', { body: { email, password } });
+  const mfa = await http('POST', '/auth/mfa/verify', { token: login.data.preAuthToken, body: { code: totp(secret) } });
+  check(`${role} signs in after approval`, mfa.status === 200 && !!mfa.data.accessToken);
+  return { token: mfa.data.accessToken, email, password, secret };
 }
 
 /** Run a SQL query directly (bypassing the API) and log it plus its rows, for cross-checking API responses. */
@@ -175,7 +188,7 @@ async function run(db) {
   check('pre-auth token cannot call clinical routes', pre.status === 401);
 
   log('\n## A1 Doctor posts the example report with printed units');
-  const patientRef = `e2e-pt-${RUN}`;
+  const patientRef = refFor(`e2e-pt-${RUN}`);
   const a1 = await http('POST', '/predict', {
     token: doctor,
     body: { patientRef, sex: 'F', ageYears: 34, ...LAHORE,
@@ -253,7 +266,7 @@ async function run(db) {
   const district = `Test District ${RUN.replace(/\d/g, (d) => 'abcdefghij'[d])}`; // place names are letters only
   const flagged = [];
   for (const [i, cbc] of LEUKEMIA_ROWS.entries()) {
-    const r = await http('POST', '/predict', { token: doctor, body: { patientRef: `e2e-leuk-${RUN}-${i}`, district, province: 'Punjab', cbc, canonicalUnits: true } });
+    const r = await http('POST', '/predict', { token: doctor, body: { patientRef: refFor(`e2e-leuk-${RUN}-${i}`), district, province: 'Punjab', cbc, canonicalUnits: true } });
     log(`    → leukemia ${r.data.inference?.scores?.leukemia?.toFixed(3)}; risk_flag ${r.data.prediction?.risk_flag}; alerts ${short((r.data.alerts || []).map((a) => [a.type, a.condition, a.severity]))}`);
     flagged.push(r);
   }
@@ -261,7 +274,7 @@ async function run(db) {
   check('third case in the district raised one leukemia outbreak_cluster alert',
     flagged[2].data.alerts?.some((a) => a.type === 'outbreak_cluster' && a.condition === 'leukemia')
     && !flagged[0].data.alerts?.some((a) => a.type === 'outbreak_cluster'));
-  const border = await http('POST', '/predict', { token: doctor, body: { patientRef: `e2e-border-${RUN}`, ...LAHORE, cbc: BORDERLINE_ROW, canonicalUnits: true } });
+  const border = await http('POST', '/predict', { token: doctor, body: { patientRef: refFor(`e2e-border-${RUN}`), ...LAHORE, cbc: BORDERLINE_ROW, canonicalUnits: true } });
   log(`    → top ${border.data.prediction?.top_condition} ${border.data.prediction?.top_confidence}; leukemia ${border.data.inference?.scores?.leukemia?.toFixed(3)}; alerts ${short((border.data.alerts || []).map((a) => [a.type, a.condition]))}`);
   check('risk flag from leukemia score is alerted as leukemia even when another class is top',
     border.data.prediction?.top_condition !== 'leukemia' && border.data.alerts?.some((a) => a.type === 'high_risk_case' && a.condition === 'leukemia'));
@@ -331,7 +344,7 @@ async function run(db) {
   for (const [label, c] of cases) {
     const units = c.units && JSON.parse(JSON.stringify(c.units));
     const api = await http('POST', '/predict', { token: doctor, quiet: true,
-      body: { patientRef: 'e2e-invalid', cbc: c.cbc, ...(units ? { units } : {}), ...(c.canonical_units ? { canonicalUnits: true } : {}) } });
+      body: { patientRef: refFor('e2e-invalid'), cbc: c.cbc, ...(units ? { units } : {}), ...(c.canonical_units ? { canonicalUnits: true } : {}) } });
     const svc = await http('POST', '/infer', { base: INFER, headers: key, quiet: true,
       body: { cbc: c.cbc, ...(units ? { units } : {}), ...(c.canonical_units ? { canonical_units: true } : {}) } });
     log(`  - ${label}: API ${api.status} "${api.data.error}" | inference ${svc.status} "${svc.data.error}"`);
@@ -339,11 +352,13 @@ async function run(db) {
   }
   const conf = await http('POST', `/predictions/${predictionId}/confirm`, { token: doctor, body: { confirmedCondition: 'iron_deficiency_anemia' } });
   check('unknown class rejected by the confirm API', conf.status === 400);
-  const [{ n: storedInvalid }] = (await db.query(`SELECT count(*)::int AS n FROM lab_reports WHERE patient_ref = 'e2e-invalid'`)).rows;
+  const [{ n: storedInvalid }] = (await db.query('SELECT count(*)::int AS n FROM lab_reports WHERE patient_ref = $1', [refFor('e2e-invalid')])).rows;
   check('no report stored for any rejected request', storedInvalid === 0);
   const [{ id: modelId }] = (await db.query(`SELECT id FROM ml_models WHERE is_active`)).rows;
   const [{ id: userId }] = (await db.query(`SELECT id FROM users WHERE email = $1`, [doctorEnrol.email])).rows;
-  const ins = `INSERT INTO lab_reports (created_by, source, patient_ref, cbc) VALUES ($1, 'manual', 'e2e-db', $2)`;
+  const ins = `INSERT INTO lab_reports (created_by, source, patient_ref, cbc) VALUES ($1, 'manual', 'FH-0000-0000', $2)`;
+  await dbRejects(db, 'free-form patient reference (not FH-XXXX-XXXX or a LIMS token)',
+    `INSERT INTO lab_reports (created_by, source, patient_ref, cbc) VALUES ($1, 'manual', 'pt-007', $2)`, [userId, JSON.stringify({ HGB: 12.4 })]);
   await dbRejects(db, 'out-of-range canonical value', ins, [userId, JSON.stringify({ HGB: 40 })]);
   await dbRejects(db, 'raw unconverted value (WBC 9010)', ins, [userId, JSON.stringify({ WBC: 9010 })]);
   await dbRejects(db, 'unknown CBC key', ins, [userId, JSON.stringify({ FOO: 1 })]);
@@ -360,4 +375,6 @@ async function run(db) {
   process.exitCode = failed ? 1 : 0;
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+main().catch((e) => { console.error(e); process.exitCode = 1; })
+  // approveByEmail uses the app's pool; close it so the script can exit.
+  .finally(() => require('../src/db/pool').pool.end().catch(() => {}));

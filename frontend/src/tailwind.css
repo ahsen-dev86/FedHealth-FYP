@@ -139,5 +139,26 @@
     }
   html {
     @apply font-sans;
+    /* Anchor links on the landing page glide instead of jumping. */
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
     }
+  /* Grid children default to min-width:auto, so one wide child (a chart, a long
+     identifier) stretches its column and pushes the page sideways on a phone.
+     Letting them shrink keeps every grid inside the viewport. */
+  :where(.grid) > * {
+    min-width: 0;
+    }
+  /* The app fills the viewport: pages size themselves with min-h-full. */
+  html, body, #root {
+    height: 100%;
+    }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+}
+
+@media print {
+  /* The guidance window prints as a clean document. */
+  body { background: white; }
 }

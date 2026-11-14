@@ -17,6 +17,9 @@ const registerSchema = z.object({
   role: z.enum(['doctor', 'lab_tech', 'nih_official', 'ngo']),
   organization: z.string().max(160).optional(),
   labId: z.string().uuid().optional(),
+}).refine((d) => d.role !== 'lab_tech' || d.labId, {
+  // A lab engineer's whole portal is scoped to their lab, so the account must name one.
+  message: 'Choose the lab you work at', path: ['labId'],
 });
 
 const loginSchema = z.object({ email, password });

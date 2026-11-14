@@ -17,7 +17,17 @@ export default defineConfig({
   use: { screenshot: 'off', video: 'off', trace: 'off' },
   projects: [
     { name: 'smoke', testMatch: /smoke\.spec\.js/, use: { ...chrome, baseURL: 'http://localhost:5175' } },
-    { name: 'mock', testMatch: /mock\.spec\.js/, use: { ...chrome, baseURL: 'http://localhost:5174' } },
+    {
+      name: 'mock',
+      testMatch: /(mock|production|responsive)\.spec\.js/,
+      use: {
+        ...chrome,
+        baseURL: 'http://localhost:5174',
+        // A synthetic microphone, so the dictation test can record without a device or a prompt.
+        permissions: ['microphone'],
+        launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] },
+      },
+    },
     { name: 'live', testMatch: /live\.spec\.js/, use: { ...chrome, baseURL: 'http://localhost:5175' } },
   ],
   webServer: [

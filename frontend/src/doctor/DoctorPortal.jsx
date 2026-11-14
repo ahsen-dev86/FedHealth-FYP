@@ -20,7 +20,8 @@ import { Label } from '../components/ui/label';
 import { Button } from '../components/ui/button';
 import { Separator } from '../components/ui/separator';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { AlertCircle, TriangleAlert } from 'lucide-react';
+import { AlertCircle, TriangleAlert, Sparkles, Copy, Check } from 'lucide-react';
+import { formatWhileTyping, generateRef, normalizeRef } from '../lib/patientRef';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
@@ -56,6 +57,30 @@ export default function DoctorPortal() {
   const refError = patientRefError(meta.patientRef);
   const ageErr = ageError(meta.ageYears);
   const setMetaField = (k) => (e) => setMeta({ ...meta, [k]: e.target.value });
+  const [issuing, setIssuing] = useState(false);
+  const [issued, setIssued] = useState(''); // the ID just generated, so the doctor is told to write it down
+  const [copied, setCopied] = useState(false);
+
+  // New patient: ask the API for an unused FH-XXXX-XXXX ID (falls back to a locally generated one).
+  async function newPatientId() {
+    setIssuing(true);
+    try {
+      const r = await api.get('/patients/new-ref');
+      setMeta((m) => ({ ...m, patientRef: r.patientRef }));
+      setIssued(r.patientRef);
+    } catch {
+      const ref = generateRef();
+      setMeta((m) => ({ ...m, patientRef: ref }));
+      setIssued(ref);
+    } finally {
+      setIssuing(false);
+      setCopied(false);
+    }
+  }
+
+  async function copyId() {
+    try { await navigator.clipboard.writeText(meta.patientRef); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch { /* clipboard blocked */ }
+  }
 
   // Merge OCR output: values as printed plus the printed unit when the API accepts it.
   function applyOcr(r) {
@@ -90,7 +115,7 @@ export default function DoctorPortal() {
     setBusy(true);
     try {
       const payload = {
-        patientRef: meta.patientRef.trim(),
+        patientRef: normalizeRef(meta.patientRef),
         sex: meta.sex || undefined,
         ageYears: meta.ageYears ? Number(meta.ageYears) : undefined,
         district: place?.district,
@@ -115,7 +140,7 @@ export default function DoctorPortal() {
   // Records the doctor's authoritative diagnosis against a prior prediction
   // (passed down to PredictionResult as onConfirm).
   async function confirmDiagnosis(predictionId, condition, notes) {
-    await api.post(`/predictions/${predictionId}/confirm`, { confirmedCondition: condition, notes: notes || undefined });
+    return api.post(`/predictions/${predictionId}/confirm`, { confirmedCondition: condition, notes: notes || undefined });
   }
 
   return (
@@ -131,11 +156,29 @@ export default function DoctorPortal() {
           <CardHeader><CardTitle>New assessment</CardTitle></CardHeader>
           <CardContent className="space-y-1">
             <div className="space-y-1.5">
-              <Label htmlFor="patientRef">Patient reference <span className="font-normal text-muted-foreground">(pseudonymous — no name/ID)</span></Label>
-              <Input id="patientRef" value={meta.patientRef} onChange={setMetaField('patientRef')}
-                     aria-invalid={showErrors && refError ? true : undefined} maxLength={128}
-                     placeholder="e.g. pt-hash-001" />
-              {(showErrors || meta.patientRef) && refError && (
+              <Label htmlFor="patientRef">Patient ID <span className="font-normal text-muted-foreground">(pseudonymous — no name, CNIC or phone)</span></Label>
+              <div className="flex gap-2">
+                <Input id="patientRef" value={meta.patientRef} className="font-mono tracking-wide"
+                       onChange={(e) => { setMeta({ ...meta, patientRef: formatWhileTyping(e.target.value) }); setIssued(''); }}
+                       aria-invalid={showErrors && refError ? true : undefined} maxLength={64}
+                       autoCapitalize="characters" autoComplete="off" spellCheck={false}
+                       placeholder="FH-XXXX-XXXX" />
+                <Button type="button" variant="outline" className="h-8 shrink-0" onClick={newPatientId} disabled={issuing}
+                        data-testid="new-patient-id" title="Generate an ID for a new patient">
+                  <Sparkles /> <span className="hidden sm:inline">{issuing ? 'Generating…' : 'New patient'}</span><span className="sm:hidden">New</span>
+                </Button>
+              </div>
+              {issued && issued === meta.patientRef ? (
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground" data-testid="patient-id-issued">
+                  New ID issued. Write it on the patient's card so their next visit links to this one.
+                  <button type="button" onClick={copyId} className="inline-flex items-center gap-1 font-medium text-primary">
+                    {copied ? <><Check className="size-3" /> Copied</> : <><Copy className="size-3" /> Copy</>}
+                  </button>
+                </p>
+              ) : !meta.patientRef && (
+                <p className="text-[11px] text-muted-foreground">Returning patient: type the ID from their card. New patient: generate one.</p>
+              )}
+              {(showErrors || meta.patientRef.length >= 12) && refError && (
                 <p className="text-[11px] text-destructive" data-testid="patient-ref-error">{refError}</p>
               )}
             </div>

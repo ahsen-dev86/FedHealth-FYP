@@ -14,14 +14,66 @@ const { query } = require('../db/pool');
 async function create({
   email, fullName, roleId,
   organization = null, labId = null, passwordHash = null,
-}) {
-  const { rows } = await query(
-    `INSERT INTO users (email, full_name, role_id, organization, lab_id, password_hash)
-     VALUES ($1, $2, $3, $4, $5, $6)
+  // 'pending' for self-registration (proof awaiting review); scripts that create
+  // trusted accounts (bootstrap admin, demo users) keep the 'approved' default.
+  verificationStatus = 'approved',
+}, db = null) {
+  const { rows } = await (db ? db.query.bind(db) : query)(
+    `INSERT INTO users (email, full_name, role_id, organization, lab_id, password_hash, verification_status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [email, fullName, roleId, organization, labId, passwordHash]
+    [email, fullName, roleId, organization, labId, passwordHash, verificationStatus]
   );
   return rows[0];
+}
+
+/** Store the proof-of-role document uploaded at registration (one per account, write-once). */
+async function addProof(userId, { docType, filename, mimeType, sha256, content }, db = null) {
+  await (db ? db.query.bind(db) : query)(
+    `INSERT INTO user_proofs (user_id, doc_type, filename, mime_type, size_bytes, sha256, content)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [userId, docType, filename, mimeType, content.length, sha256, content]
+  );
+}
+
+/** The stored proof document including its bytes (admin review only). */
+async function getProof(userId) {
+  const { rows } = await query('SELECT * FROM user_proofs WHERE user_id = $1', [userId]);
+  return rows[0] || null;
+}
+
+/** Accounts for the admin console, newest first, with proof metadata (never the bytes). */
+async function listForAdmin({ verification = null, limit = 200 } = {}) {
+  const { rows } = await query(
+    `SELECT u.id, u.email, u.full_name, r.name AS role, u.organization, u.status,
+            u.verification_status, u.verification_note, u.verified_at, u.created_at,
+            u.mfa_enabled, u.is_gov_verified, l.name AS lab_name,
+            p.doc_type AS proof_doc_type, p.filename AS proof_filename, p.mime_type AS proof_mime_type,
+            p.size_bytes AS proof_size_bytes, p.uploaded_at AS proof_uploaded_at,
+            v.full_name AS verified_by_name
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+       LEFT JOIN labs l ON l.id = u.lab_id
+       LEFT JOIN user_proofs p ON p.user_id = u.id
+       LEFT JOIN users v ON v.id = u.verified_by
+      WHERE ($1::text IS NULL OR u.verification_status = $1)
+      ORDER BY (u.verification_status = 'pending') DESC, u.created_at DESC
+      LIMIT $2`,
+    [verification, limit]
+  );
+  return rows;
+}
+
+/** Record an administrator's decision on an account's proof document. */
+async function setVerification(id, { status, note = null, reviewerId }) {
+  const { rows } = await query(
+    `UPDATE users
+        SET verification_status = $2, verification_note = $3, verified_by = $4, verified_at = now()
+      WHERE id = $1
+      RETURNING id, email, full_name, verification_status, verification_note, verified_at`,
+    [id, status, note, reviewerId]
+  );
+  return rows[0] || null;
 }
 
 // Used by login; JOINs roles so the caller gets role_name for RBAC checks
@@ -95,4 +147,5 @@ module.exports = {
   create, findByEmail, findById, setPasswordHash,
   setMfaSecret, confirmMfa, setStatus,
   recordFailedLogin, resetFailedLogins, isLocked,
+  addProof, getProof, listForAdmin, setVerification,
 };

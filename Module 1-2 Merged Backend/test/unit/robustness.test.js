@@ -4,6 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const multer = require('multer');
 const { reportBody, confirmBody, patientRef } = require('../../src/validators/domain');
+const PatientRef = require('../../src/contract/patientRef');
+
+const REF = PatientRef.format('7K3M9QA'); // a valid FedHealth patient ID
 const { errorHandler, HttpError, uuidParam } = require('../../src/middleware/errors');
 const { prepareCbc } = require('../../src/services/cbc');
 const { consistencyWarnings, plausibleUnits } = require('../../src/contract');
@@ -20,13 +23,20 @@ function respond(err) {
   return res;
 }
 
-test('patient reference: pseudonymous tokens pass, direct identifiers and junk do not', () => {
-  for (const ok of ['pt-hash-001', 'e2e-rb-1', 'LAB.0042:A', 'a3f9c1'.repeat(10)]) assert.ok(patientRef.safeParse(ok).success, ok);
+test('patient reference: FedHealth IDs and LIMS tokens pass, direct identifiers and junk do not', () => {
+  // A valid ID, the same ID as a person might type it, and a 64-hex LIMS HMAC token.
+  for (const ok of [REF, REF.toLowerCase(), REF.replace(/-/g, ' '), 'a3f9c1e2'.repeat(8)]) {
+    const r = patientRef.safeParse(ok);
+    assert.ok(r.success, ok);
+    if (ok.length < 20) assert.equal(r.data, REF, 'typed forms normalise to the canonical ID');
+  }
+  const wrongCheck = REF.slice(0, -1) + (REF.endsWith('0') ? '1' : '0');
   const bad = [
-    ['35202-1234567-1', /CNIC/], ['3520212345671', /CNIC/], [3520212345671, /Expected string/],
+    ['35202-1234567-1', /CNIC/], ['3520212345671', /CNIC/], [3520212345671, /Enter the patient ID/],
     ['0300-1234567', /phone/], ['03001234567', /phone/], ['+923001234567', /phone/],
-    ['ali@example.com', /email/], ['<script>', /only letters/], ["x'; DROP TABLE t;--", /only letters/],
-    ['علی', /only letters/], ['', /Enter the/], ['   ', /Enter the/], ['p'.repeat(129), /too long/],
+    ['ali@example.com', /email/], ['<script>', /FH-XXXX-XXXX/], ["x'; DROP TABLE t;--", /FH-XXXX-XXXX/],
+    ['علی', /FH-XXXX-XXXX/], ['', /Enter the/], ['   ', /Enter the/], ['p'.repeat(129), /FH-XXXX-XXXX/],
+    ['pt-hash-001', /FH-XXXX-XXXX/], [wrongCheck, /check character/],
   ];
   for (const [value, re] of bad) {
     const r = patientRef.safeParse(value);
@@ -36,7 +46,7 @@ test('patient reference: pseudonymous tokens pass, direct identifiers and junk d
 });
 
 test('report body: context fields must be sensible', () => {
-  const base = { patientRef: 'p1', cbc: { HGB: 12.4 }, units: { HGB: 'g/dL' } };
+  const base = { patientRef: REF, cbc: { HGB: 12.4 }, units: { HGB: 'g/dL' } };
   assert.ok(reportBody.safeParse(base).success);
   for (const extra of [{ ageYears: -1 }, { ageYears: 131 }, { ageYears: 12.5 }, { ageYears: '30' }, { sex: 'female' },
     { latitude: 31.5 }, { latitude: 91, longitude: 70 }, { collectedAt: 'yesterday' }, { collectedAt: '2999-01-01' },
@@ -48,11 +58,11 @@ test('report body: context fields must be sensible', () => {
 
 test('report body: bad CBC/unit entries are named, "__proto__" survives to be rejected', () => {
   const msg = (body) => reportBody.safeParse(body).error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(' | ');
-  assert.match(msg({ patientRef: 'p', cbc: { HGB: '12.4' } }), /cbc\.HGB: HGB must be a number, not the text "12\.4"/);
-  assert.match(msg({ patientRef: 'p', cbc: { HGB: true } }), /HGB must be a number, not a boolean/);
-  assert.match(msg({ patientRef: 'p' }), /cbc: cbc is required/);
-  assert.match(msg({ patientRef: 'p', cbc: { HGB: 12 }, units: { HGB: 5 } }), /units\.HGB: the unit for HGB must be text/);
-  const parsed = reportBody.parse({ patientRef: 'p', cbc: JSON.parse('{"__proto__": 5, "HGB": 12}'), units: { HGB: 'g/dL' } });
+  assert.match(msg({ patientRef: REF, cbc: { HGB: '12.4' } }), /cbc\.HGB: HGB must be a number, not the text "12\.4"/);
+  assert.match(msg({ patientRef: REF, cbc: { HGB: true } }), /HGB must be a number, not a boolean/);
+  assert.match(msg({ patientRef: REF }), /cbc: cbc is required/);
+  assert.match(msg({ patientRef: REF, cbc: { HGB: 12 }, units: { HGB: 5 } }), /units\.HGB: the unit for HGB must be text/);
+  const parsed = reportBody.parse({ patientRef: REF, cbc: JSON.parse('{"__proto__": 5, "HGB": 12}'), units: { HGB: 'g/dL' } });
   assert.throws(() => prepareCbc(parsed), /Unknown CBC field\(s\): __proto__/);
 });
 

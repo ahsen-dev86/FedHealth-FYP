@@ -29,6 +29,8 @@ const EX = { WBC: 9010, RBC: 4.47, HGB: 12.4, HCT: 38, MCV: 85, MCH: 28, MCHC: 3
 const UN = { WBC: '/mm3', RBC: 'mil/mm3', HGB: 'g/dL', HCT: '%', MCV: 'fl', MCH: 'pg', MCHC: 'g/dL', RDW: '%', PLT: '/mm3', NEUTp: '%' };
 const PNG = fs.readFileSync(path.join(__dirname, '../test/fixtures/cbc_report.png'));
 const RANDOM_UUID = '3f2b8c1e-9d4a-4c6e-8b7f-1a2b3c4d5e6f';
+const { proofForm, approveByEmail, refFor } = require('./lib/e2eAccounts');
+const REF = refFor(`e2e-rb-${RUN}`); // this run's patient, as a valid FedHealth ID
 
 /** Fetch wrapper that never throws on a non-JSON or network-error response, so a bad request can be graded. */
 async function call(method, route, { token, body, raw, headers = {}, base = BASE, form } = {}) {
@@ -51,13 +53,19 @@ async function call(method, route, { token, body, raw, headers = {}, base = BASE
 
 /** Register a throwaway account and complete MFA enrolment; returns its access token, email, secret and pre-auth token. */
 async function enrol(role, email) {
-  const reg = await call('POST', '/auth/register', { body: { email, password: PASSWORD, fullName: `RB ${role}`, role } });
+  const reg = await call('POST', '/auth/register', { form: proofForm({ email, password: PASSWORD, fullName: `RB ${role}`, role }) });
   if (reg.status !== 201) throw new Error(`register ${role}: ${reg.status} ${reg.data.error}`);
   const pre = reg.data.preAuthToken;
   const setup = await call('POST', '/auth/mfa/setup', { token: pre, body: {} });
   const secret = setup.data.manualKey.replace(/\s/g, '');
   const ok = await call('POST', '/auth/mfa/verify-setup', { token: pre, body: { code: speakeasy.totp({ secret, encoding: 'base32' }) } });
-  return { token: ok.data.accessToken, email, secret, pre };
+  // No session is issued until the proof is approved; approve, then sign in.
+  if (!ok.data.pendingVerification) throw new Error(`enrol ${role}: expected pendingVerification`);
+  await approveByEmail(email);
+  const login = await call('POST', '/auth/login', { body: { email, password: PASSWORD } });
+  const mfa = await call('POST', '/auth/mfa/verify', { token: login.data.preAuthToken, body: { code: speakeasy.totp({ secret, encoding: 'base32' }) } });
+  if (!mfa.data.accessToken) throw new Error(`enrol ${role}: sign-in after approval failed (${mfa.status} ${mfa.data.error})`);
+  return { token: mfa.data.accessToken, email, secret, pre };
 }
 
 const rows = [];
@@ -75,7 +83,7 @@ async function main() {
   const doctor = await enrol('doctor', `e2e-rb-doctor-${RUN}@fedhealth.test`);
   const nih = await enrol('nih_official', `e2e-rb-nih-${RUN}@nih.org.pk`);
   const D = doctor.token;
-  const predict = (body) => call('POST', '/predict', { token: D, body: { patientRef: `e2e-rb-${RUN}`, ...body } });
+  const predict = (body) => call('POST', '/predict', { token: D, body: { patientRef: REF, ...body } });
   const good = await predict({ cbc: EX, units: UN });
   if (good.status !== 201) throw new Error(`baseline prediction failed: ${good.status} ${good.data.error}`);
   const predictionId = good.data.prediction.id;
@@ -106,10 +114,16 @@ async function main() {
   await T('Auth', 'doctor opens Model Health', 403, () => call('GET', '/model-health/summary', { token: D }));
   await T('Auth', "login email `' OR 1=1 --`", 400, () => call('POST', '/auth/login', { body: { email: "' OR 1=1 --", password: 'x'.repeat(8) } }));
   await T('Auth', 'login with wrong password', 401, () => call('POST', '/auth/login', { body: { email: doctor.email, password: 'wrong-password' } }));
-  await T('Auth', 'register as admin', 400, () => call('POST', '/auth/register', { body: { email: `x-${RUN}@fedhealth.test`, password: PASSWORD, fullName: 'Test User', role: 'admin' } }));
-  await T('Auth', 'NIH official with a gmail address', 400, () => call('POST', '/auth/register', { body: { email: `nih-${RUN}@gmail.com`, password: PASSWORD, fullName: 'Test User', role: 'nih_official' } }));
-  await T('Auth', 'register an existing email', 409, () => call('POST', '/auth/register', { body: { email: doctor.email, password: PASSWORD, fullName: 'Test User', role: 'doctor' } }));
-  await T('Auth', 'password shorter than 8', 400, () => call('POST', '/auth/register', { body: { email: `y-${RUN}@fedhealth.test`, password: 'short', fullName: 'Test User', role: 'doctor' } }));
+  await T('Auth', 'register as admin', 400, () => call('POST', '/auth/register', { form: proofForm({ email: `x-${RUN}@fedhealth.test`, password: PASSWORD, fullName: 'Test User', role: 'admin' }) }));
+  await T('Auth', 'NIH official with a gmail address', 400, () => call('POST', '/auth/register', { form: proofForm({ email: `nih-${RUN}@gmail.com`, password: PASSWORD, fullName: 'Test User', role: 'nih_official' }) }));
+  await T('Auth', 'register an existing email', 409, () => call('POST', '/auth/register', { form: proofForm({ email: doctor.email, password: PASSWORD, fullName: 'Test User', role: 'doctor' }) }));
+  await T('Auth', 'password shorter than 8', 400, () => call('POST', '/auth/register', { form: proofForm({ email: `y-${RUN}@fedhealth.test`, password: 'short', fullName: 'Test User', role: 'doctor' }) }));
+  await T('Auth', 'register without a proof document', 400, () => call('POST', '/auth/register', { body: { email: `z-${RUN}@fedhealth.test`, password: PASSWORD, fullName: 'Test User', role: 'doctor' } }));
+  await T('Auth', 'register with a renamed non-document as proof', 400, () => {
+    const f = proofForm({ email: `w-${RUN}@fedhealth.test`, password: PASSWORD, fullName: 'Test User', role: 'doctor' });
+    f.set('proof', new Blob([Buffer.from('MZ not a document, only renamed')], { type: 'application/pdf' }), 'licence.pdf');
+    return call('POST', '/auth/register', { form: f });
+  });
   const login = await call('POST', '/auth/login', { body: { email: doctor.email, password: PASSWORD } });
   await T('Auth', 'MFA code "abcdef"', 400, () => call('POST', '/auth/mfa/verify', { token: login.data.preAuthToken, body: { code: 'abcdef' } }));
   await T('Auth', 'wrong 6-digit MFA code', 401, () => call('POST', '/auth/mfa/verify', { token: login.data.preAuthToken,
@@ -133,7 +147,7 @@ async function main() {
   await T('CBC', 'HGB true (boolean)', 400, () => predict({ cbc: { ...EX, HGB: true }, units: UN }));
   await T('CBC', 'HGB [12.4] (array)', 400, () => predict({ cbc: { ...EX, HGB: [12.4] }, units: UN }));
   await T('CBC', 'HGB 1e309 (Infinity)', 400, () => call('POST', '/predict', { token: D,
-    raw: `{"patientRef":"e2e-rb-${RUN}","cbc":{"HGB":1e309},"units":{"HGB":"g/dL"}}` }));
+    raw: `{"patientRef":"${REF}","cbc":{"HGB":1e309},"units":{"HGB":"g/dL"}}` }));
   await T('CBC', 'HGB -5 (negative)', 400, () => predict({ cbc: { ...EX, HGB: -5 }, units: UN }));
   await T('CBC', 'PLT 0', 400, () => predict({ cbc: { ...EX, PLT: 0 }, units: UN }));
   await T('CBC', 'HGB 1,000,000', 400, () => predict({ cbc: { ...EX, HGB: 1e6 }, units: UN }));
@@ -142,7 +156,7 @@ async function main() {
   await T('CBC', 'unknown field FOO', 400, () => predict({ cbc: { ...EX, FOO: 1 }, units: UN }));
   await T('CBC', 'lower-case key "hgb"', 400, () => predict({ cbc: { hgb: 12.4 }, units: { hgb: 'g/dL' } }));
   await T('CBC', 'key "__proto__"', 400, () => call('POST', '/predict', { token: D,
-    raw: `{"patientRef":"e2e-rb-${RUN}","cbc":{"__proto__":5,"HGB":12.4},"units":{"HGB":"g/dL"}}` }));
+    raw: `{"patientRef":"${REF}","cbc":{"__proto__":5,"HGB":12.4},"units":{"HGB":"g/dL"}}` }));
   await T('CBC', 'key "constructor"', 400, () => predict({ cbc: { constructor: 5, HGB: 12.4 }, units: { HGB: 'g/dL' } }));
   await T('CBC', 'non-model field PDW (not a model input)', 400, () => predict({ cbc: { ...EX, PDW: 16 }, units: UN }));
 
@@ -254,7 +268,7 @@ async function main() {
   // --- nothing from the rejected requests was stored -------------------------------
   const db = new Client({ host: process.env.PGHOST, port: Number(process.env.PGPORT || 5432), database: process.env.PGDATABASE, user: process.env.PGUSER, password: process.env.PGPASSWORD });
   await db.connect();
-  const { rows: [{ n }] } = await db.query('SELECT count(*)::int AS n FROM lab_reports WHERE patient_ref = $1', [`e2e-rb-${RUN}`]);
+  const { rows: [{ n }] } = await db.query('SELECT count(*)::int AS n FROM lab_reports WHERE patient_ref = $1', [REF]);
   await db.end();
   const expectedStored = 1 + 1 + 1 + 1; // baseline, boundary, case/µ variants, data-quality typo
   rows.push(`| DB | reports stored for this run's patient (only the 4 accepted requests) | ${expectedStored} | ${n} | | ${n === expectedStored ? 'PASS' : '**FAIL**'} |`);
@@ -274,4 +288,6 @@ async function main() {
   process.exitCode = failures ? 1 : 0;
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; });
+main().catch((e) => { console.error(e); process.exitCode = 1; })
+  // approveByEmail uses the app's pool; close it so the script can exit.
+  .finally(() => require('../src/db/pool').pool.end().catch(() => {}));
