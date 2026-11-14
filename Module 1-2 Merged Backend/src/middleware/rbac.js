@@ -41,9 +41,31 @@ function requirePermission(...required) {
   };
 }
 
+/**
+ * Route guard: the caller must hold AT LEAST ONE of the listed codes. Used
+ * where two roles reach the same route by different rights (an NGO managing
+ * its own profile, an administrator managing any). req.permissions carries the
+ * caller's full set so the handler can tell which case applies.
+ */
+function requireAnyPermission(...accepted) {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) throw new HttpError(401, 'Not authenticated');
+      const perms = await permsForRole(req.user.role_id, req.user.role_name);
+      if (!accepted.some((code) => perms.has(code))) {
+        throw new HttpError(403, `Missing permission(s): ${accepted.join(' or ')}`);
+      }
+      req.permissions = perms;
+      next();
+    } catch (e) {
+      next(e);
+    }
+  };
+}
+
 /** Clear the cache (call after changing a role's permissions at runtime). */
 function invalidateCache() {
   cache.clear();
 }
 
-module.exports = { requirePermission, invalidateCache };
+module.exports = { requirePermission, requireAnyPermission, invalidateCache };

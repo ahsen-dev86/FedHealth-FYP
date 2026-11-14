@@ -30,14 +30,30 @@ const { runPrediction, persistPrediction, presentPrediction } = require('../serv
 const { withTransaction } = require('../db/pool');
 const ocr = require('../services/ocr');
 const nlp = require('../services/nlp');
-const { reportBody, predictExistingBody, symptomsBody, patientRef } = require('../validators/domain');
-const { contract } = require('../contract');
+const { reportBody, predictExistingBody, symptomsBody, patientRefLookup } = require('../validators/domain');
+const { contract, CLASSES } = require('../contract');
+const PatientRef = require('../contract/patientRef');
+const guidance = require('../services/guidance');
+const speech = require('../services/speechClient');
+const { query } = require('../db/pool');
 
 const router = express.Router();
 router.param('id', uuidParam);
 router.param('ref', (req, res, next, value) => {
-  const r = patientRef.safeParse(value);
-  return next(r.success ? undefined : new HttpError(400, r.error.issues[0].message));
+  // Tidy a typed FH ID (case, dashes); references stored before the FH format still resolve.
+  const r = patientRefLookup.safeParse(PatientRef.normalize(value));
+  if (!r.success) return next(new HttpError(400, r.error.issues[0].message));
+  req.params.ref = r.data;
+  return next();
+});
+// Dictation clips are small (opus); kept in memory and forwarded, never written to disk here.
+const AUDIO_TYPES = /^(audio\/(webm|ogg|mp4|mpeg|wav|x-wav|x-m4a|aac)|video\/webm)/;
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => (AUDIO_TYPES.test(file.mimetype)
+    ? cb(null, true)
+    : cb(new HttpError(400, 'Send an audio recording (webm, ogg, mp4, wav)'))),
 });
 const OCR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/tiff']);
 const upload = multer({
@@ -102,6 +118,18 @@ router.get('/reports/:id', requireAuth, requirePermission('report:read'),
     const report = await LabReports.findById(req.params.id);
     if (!report) throw new HttpError(404, 'report not found');
     res.json(report);
+  }));
+
+// --- Issue a new patient ID (FH-XXXX-XXXX) -----------------------------------
+// Random, with a check character, and guaranteed not to be in use already.
+router.get('/patients/new-ref', requireAuth, requirePermission('report:create'),
+  asyncHandler(async (req, res) => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = PatientRef.generate();
+      const { rows } = await query('SELECT 1 FROM lab_reports WHERE patient_ref = $1 LIMIT 1', [candidate]);
+      if (!rows.length) return res.json({ patientRef: candidate, format: 'FH-XXXX-XXXX' });
+    }
+    throw new HttpError(503, 'Could not issue a patient ID; try again');
   }));
 
 // --- Longitudinal history for a pseudonymous patient (6.2.2 trends) ---------
@@ -175,6 +203,45 @@ router.post('/symptoms/parse', requireAuth,
   asyncHandler(async (req, res) => {
     const { text } = symptomsBody.parse(req.body);
     res.json({ ...nlp.parseSymptoms(text), usedByModel: false });
+  }));
+
+// --- Voice dictation: English, Urdu or mixed English-Urdu -> text + symptom tags --
+// multipart field "audio" + "language" (en | ur | mixed). The clip goes to the
+// local Whisper service and is discarded; only the transcript comes back.
+router.post('/symptoms/transcribe', requireAuth,
+  auditAction('SYMPTOM_DICTATION', () => ({ type: 'speech' })),
+  requirePermission('report:create'),
+  audioUpload.single('audio'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new HttpError(400, 'Send the recording in the form field "audio"');
+    const language = ['en', 'ur', 'mixed'].includes(req.body?.language) ? req.body.language : 'mixed';
+    const result = await speech.transcribe(req.file.buffer, {
+      language, filename: req.file.originalname, mimeType: req.file.mimetype,
+    });
+    const text = String(result.text || '').slice(0, 2000);
+    res.json({
+      text,
+      requestedLanguage: language,
+      detectedLanguage: result.detected_language,
+      durationSeconds: result.duration_seconds,
+      engine: result.model,
+      ms: result.ms,
+      ...(text.trim() ? { parsed: { ...nlp.parseSymptoms(text), usedByModel: false } } : {}),
+    });
+  }));
+
+router.get('/symptoms/speech-status', requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json(await speech.status());
+  }));
+
+// --- Guideline-based next steps for one condition -----------------------------
+// The same block a prediction response carries for its top-scoring condition;
+// the doctor's reading window loads any of the four from here.
+router.get('/recommendations/:condition', requireAuth, requirePermission('prediction:read'),
+  asyncHandler(async (req, res) => {
+    if (!CLASSES.includes(req.params.condition)) throw new HttpError(404, 'No guidance for that condition');
+    res.json(guidance.forCondition(req.params.condition));
   }));
 
 module.exports = router;

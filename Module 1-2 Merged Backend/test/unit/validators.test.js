@@ -18,7 +18,7 @@ test('NIH cluster filter accepts only the four classes', () => {
 });
 
 test('report body rejects unknown top-level fields and bad context values', () => {
-  const ok = { patientRef: 'pt-1', cbc: { HGB: 12.4 }, units: { HGB: 'g/dL' }, sex: 'F', ageYears: 30 };
+  const ok = { patientRef: 'FH-0000-0000', cbc: { HGB: 12.4 }, units: { HGB: 'g/dL' }, sex: 'F', ageYears: 30 };
   assert.ok(reportBody.parse(ok));
   assert.throws(() => reportBody.parse({ ...ok, diagnosis: 'anemia' }));
   assert.throws(() => reportBody.parse({ ...ok, ageYears: 131 }));

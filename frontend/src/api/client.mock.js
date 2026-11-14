@@ -16,6 +16,11 @@ import {
   contract, CLASSES, FEATURES, CANONICAL_UNITS, validateCbc,
 } from '../lib/contract.js';
 import modelHealthSnapshot from './modelHealthSnapshot.json' with { type: 'json' };
+import { sampleLabTelemetry } from './labSample.js';
+import {
+  extraRoute, mockExplanation, guidanceFor, servedBy, rememberPrediction, accountFor, addPendingAccount,
+  patientRefError, normalizeRef,
+} from './client.mockExtras.js';
 
 const delay = (ms = 350) => new Promise((res) => setTimeout(res, ms));
 
@@ -24,22 +29,47 @@ export function setTokenGetter(fn) { tokenGetter = fn; }
 export function setUnauthorizedHandler() { /* mock sessions do not expire */ }
 
 // ---- fake session state ---------------------------------------------------
+// Kept in sessionStorage as well, so a reload or a window opened from the app
+// (the guidance reading window) is still signed in, as it would be with a real token.
+const SESSION_KEY = 'fedhealth_mock_session';
 let session = null; // { fullName, email, role, permissions }
+try { session = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch { session = null; }
+function persistSession() {
+  try {
+    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch { /* storage blocked: session stays in memory */ }
+}
 let pendingMfaSetup = null; // in-flight /auth/mfa/setup promise, see route()
 
 // Demo-only stand-in for real role assignment: infers a role from the login
 // email so different addresses can exercise the doctor/lab/NGO/NIH portals.
 function roleFromEmail(email) {
+  if (/admin/i.test(email)) return 'admin';
   if (/nih/i.test(email)) return 'nih_official';
   if (/lab/i.test(email)) return 'lab_tech';
   if (/ngo/i.test(email)) return 'ngo';
   return 'doctor';
 }
+// The demo labs seeded by the backend (init/006_seed.sql), with fixed ids so a mock
+// lab engineer is always linked to the same lab and its sample numbers stay stable.
+const DEMO_LABS = [
+  { id: '5a1b0000-0000-4000-8000-000000000001', name: 'Aga Khan Lab - Karachi', lims_type: 'Nexus Pro', district: 'Karachi', province: 'Sindh', latitude: 24.8607, longitude: 67.0011, fl_client_id: 'lab-khi-01' },
+  { id: '5a1b0000-0000-4000-8000-000000000002', name: 'Shaukat Khanum - Lahore', lims_type: 'Nexus Pro', district: 'Lahore', province: 'Punjab', latitude: 31.5204, longitude: 74.3587, fl_client_id: 'lab-lhr-01' },
+  { id: '5a1b0000-0000-4000-8000-000000000003', name: 'PIMS Lab - Islamabad', lims_type: 'Nexus Pro', district: 'Islamabad', province: 'Islamabad', latitude: 33.6844, longitude: 73.0479, fl_client_id: 'lab-isb-01' },
+].map((l, i) => ({ ...l, created_at: new Date(Date.now() - (120 - i * 20) * 86400000).toISOString() }));
+
 // Mirrors the backend's permission set per role, so `can()` checks in the UI
 // (see AuthContext) behave the same against the mock as against the real API.
 function permsForRole(role) {
+  // An administrator holds every permission (as in init/006 + 011 + 012).
+  if (role === 'admin') {
+    return ['report:create', 'report:read', 'prediction:create', 'prediction:read', 'prediction:confirm', 'nih:dashboard', 'nih:alerts',
+      'audit:read', 'user:manage', 'model:register', 'lab:manage', 'lab:dashboard', 'help:manage_all', 'dataset:export'];
+  }
   if (role === 'nih_official') return ['nih:dashboard', 'nih:alerts', 'audit:read'];
   if (role === 'ngo') return ['help:manage_own'];
+  if (role === 'lab_tech') return ['report:create', 'report:read', 'lab:dashboard'];
   return ['report:create', 'report:read', 'prediction:create', 'prediction:read', 'prediction:confirm'];
 }
 
@@ -354,18 +384,48 @@ async function route(method, path, body) {
   const [pathname, qs] = path.split('?');
   const params = new URLSearchParams(qs || '');
 
+  // Routes added for production readiness (client.mockExtras.js) are tried first.
+  const extra = await extraRoute({ method, pathname, params, body, session, ngoDirectory: NGO_DIRECTORY, supplyRequests: SUPPLY_REQUESTS });
+  if (extra !== undefined) return extra;
+
   // --- auth ---
   if (pathname === '/auth/login' && method === 'POST') {
     await delay();
-    session = { fullName: body.email.split('@')[0], email: body.email, role: roleFromEmail(body.email) };
+    // An account registered this session stays locked until an admin approves its proof.
+    const known = accountFor(body.email);
+    if (known && known.verification_status !== 'approved') {
+      const rejected = known.verification_status === 'rejected';
+      const e = mockError(403, rejected
+        ? `Your proof document was not accepted${known.verification_note ? `: ${known.verification_note}` : ''}. Contact the FedHealth administrator.`
+        : 'Your account is awaiting verification. An administrator is reviewing the proof document you uploaded; you can sign in once it is approved.');
+      e.code = rejected ? 'VERIFICATION_REJECTED' : 'PENDING_VERIFICATION';
+      throw e;
+    }
+    const role = known?.role || roleFromEmail(body.email);
+    session = { fullName: body.email.split('@')[0], email: body.email, role, ...(role === 'lab_tech' ? { labId: DEMO_LABS[0].id } : {}) };
     const existingSecret = loadSecret();
     if (existingSecret) startDemoCodeLogging(existingSecret);
     return { preAuthToken: 'demo-preauth', mfaSetupRequired: !existingSecret };
   }
-  if (pathname === '/auth/register' && method === 'POST') {
+  if (pathname === '/auth/register' && (method === 'UPLOAD' || method === 'POST')) {
     await delay();
-    session = { fullName: body.fullName, email: body.email, role: body.role || 'doctor' };
-    return { preAuthToken: 'demo-preauth' };
+    // Multipart in the real API: account fields + the proof document in field "proof".
+    const f = body instanceof FormData ? Object.fromEntries(body.entries()) : body;
+    if (f.role === 'lab_tech' && !DEMO_LABS.some((l) => l.id === f.labId)) throw mockError(400, 'labId: Choose the lab you work at');
+    if (!(f.proof instanceof Blob) || !f.proof.size) {
+      const e = mockError(400, 'Upload your proof document (PDF, PNG, JPEG or WebP, up to 5 MB)');
+      e.code = 'PROOF_REQUIRED';
+      throw e;
+    }
+    if (!['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(f.proof.type)) throw mockError(400, 'The proof must be a PDF, PNG, JPEG or WebP file');
+    addPendingAccount({ email: f.email, fullName: f.fullName, role: f.role || 'doctor', organization: f.organization,
+      labName: DEMO_LABS.find((l) => l.id === f.labId)?.name, proofName: f.proof.name });
+    session = { fullName: f.fullName, email: f.email, role: f.role || 'doctor', pendingVerification: true, ...(f.role === 'lab_tech' ? { labId: f.labId } : {}) };
+    return { preAuthToken: 'demo-preauth', verificationStatus: 'pending', mfaSetupRequired: true };
+  }
+  if (pathname === '/auth/labs' && method === 'GET') {
+    await delay(150);
+    return DEMO_LABS.map(({ id, name, district, province }) => ({ id, name, district, province }));
   }
   if (pathname === '/auth/mfa/setup' && method === 'POST') {
     // React 18 StrictMode double-invokes effects in dev, so MfaPage's
@@ -397,6 +457,8 @@ async function route(method, path, body) {
     if (!secretBytes) { const e = new Error('No MFA enrolment found for this demo session — register again.'); e.status = 400; throw e; }
     const ok = await verifyTotp(secretBytes, body.code);
     if (!ok) { const e = new Error('Invalid code. Check your authenticator app and try again.'); e.status = 401; throw e; }
+    // A freshly registered account gets no session until an admin approves its proof.
+    if (session?.pendingVerification) { session = null; return { activated: true, pendingVerification: true, verificationStatus: 'pending' }; }
     return { accessToken: 'demo-access-token' };
   }
   if (pathname === '/dev/current-totp' && method === 'GET') {
@@ -415,6 +477,10 @@ async function route(method, path, body) {
   // --- doctor: predict / confirm / history / OCR ---
   if (pathname === '/predict' && method === 'POST') {
     await delay(500);
+    const patientRef = normalizeRef(body.patientRef);
+    const refProblem = patientRefError(patientRef);
+    if (refProblem) throw mockError(400, `patientRef: ${refProblem}`);
+    body = { ...body, patientRef };
     const v = validateCbc(body.cbc || {}, body.units || (body.canonicalUnits ? CANONICAL_UNITS : {}));
     const firstError = Object.values(v.errors)[0];
     if (firstError) throw mockError(400, firstError);
@@ -428,12 +494,14 @@ async function route(method, path, body) {
                      cbc_reported: v.values, source: body.source || 'manual', created_at: new Date().toISOString() };
     const prediction = { id, scores, top_condition: top, top_confidence: scores[top], risk_flag: riskFlag,
                          imputed_features: imputed, confirmed_condition: null };
+    rememberPrediction(id, v.canonical, top);
+    const backup = servedBy() === 'backup';
     reportsByPatient.set(body.patientRef, [...(reportsByPatient.get(body.patientRef) || []),
       { ...report, prediction: { ...prediction, model_name: 'cbc_multiclass', model_version: 'mock' } }]);
     return {
       persisted: true, report, prediction,
       inference: {
-        model_name: 'cbc_multiclass', model_version: 'mock (no model call)', mode: 'demo_mock', classes: CLASSES,
+        model_name: 'cbc_multiclass', model_version: backup ? 'mock backup (no model call)' : 'mock (no model call)', mode: 'demo_mock', classes: CLASSES,
         features: FEATURES, scores, top_condition: top, top_confidence: scores[top], risk_flag: riskFlag,
         risk_threshold: 0.3, canonical_cbc: v.canonical, imputed_features: imputed, rule_flags: {},
         calibration: { method: 'temperature_scaling' }, inference_ms: 3,
@@ -444,6 +512,9 @@ async function route(method, path, body) {
         modelInputs: FEATURES, imputedFeatures: imputed, notModelInputs: contract.not_model_inputs,
       },
       rule_flags: {},
+      serving: { servedBy: backup ? 'backup' : 'primary', failoverReason: backup ? 'failover drill: primary marked down' : null },
+      explanation: mockExplanation(v.canonical, scores, top, body.sex),
+      recommendations: guidanceFor(top),
       alerts: riskFlag ? [{ id: 900 + id, type: 'high_risk_case', condition: 'leukemia', title: 'High leukemia screening score (mock)' }] : [],
     };
   }
@@ -592,6 +663,20 @@ async function route(method, path, body) {
     return { ...ngo, requests };
   }
 
+  // --- Lab engineer: their own lab's node dashboard (sample telemetry, same shape as the API) ---
+  if (pathname === '/lab/dashboard' && method === 'GET') {
+    await delay(300);
+    const lab = DEMO_LABS.find((l) => l.id === session?.labId);
+    if (!lab) throw mockError(404, 'Your account is not linked to a lab yet. Ask an administrator to link it.');
+    return {
+      lab: {
+        id: lab.id, name: lab.name, lims_type: lab.lims_type, district: lab.district, province: lab.province,
+        latitude: lab.latitude, longitude: lab.longitude, fl_client_id: lab.fl_client_id, enrolled_at: lab.created_at,
+      },
+      ...sampleLabTelemetry(lab, { simulate: params.get('simulate') || undefined }),
+    };
+  }
+
   // --- Model Health dashboard (real snapshot + labelled sample intake) ---
   if (pathname.startsWith('/model-health/') && method === 'GET') {
     await delay(300);
@@ -625,10 +710,12 @@ async function route(method, path, body) {
 
 // Same shape as the real client.js `api` (get/post/put/patch/upload), routed
 // through the in-memory `route()` dispatcher instead of `fetch`.
+const run = (...args) => route(...args).finally(persistSession);
 export const api = {
-  get: (path) => route('GET', path),
-  post: (path, body) => route('POST', path, body || {}),
-  put: (path, body) => route('PUT', path, body || {}),
-  patch: (path, body) => route('PATCH', path, body || {}),
-  upload: (path, formData) => route('UPLOAD', path, formData),
+  get: (path) => run('GET', path),
+  post: (path, body) => run('POST', path, body || {}),
+  put: (path, body) => run('PUT', path, body || {}),
+  patch: (path, body) => run('PATCH', path, body || {}),
+  upload: (path, formData) => run('UPLOAD', path, formData),
+  download: (path) => run('DOWNLOAD', path),
 };

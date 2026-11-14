@@ -4,6 +4,8 @@
 import { test, expect } from '@playwright/test';
 import { completeMfaSetup, fillExampleReport, OLD_LABELS } from './helpers.js';
 
+const REF = 'FH-0000-0000'; // a valid FedHealth patient ID (check character 0)
+
 // The mock keeps its session in memory, so navigate inside the SPA (sidebar),
 // never with page.goto() after signing in.
 // Logs in and completes MFA setup (mock accounts always need enrolment on
@@ -13,7 +15,7 @@ async function signIn(page, email) {
   await page.fill('#email', email);
   await page.fill('#password', 'mock-password-123');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await completeMfaSetup(page);
+  return completeMfaSetup(page);
 }
 
 test('login: clearing the email also clears the password', async ({ page }) => {
@@ -36,7 +38,7 @@ test('doctor: 10 CBC fields with units, four-class result and disclaimer', async
   }
   await expect(page.getByText('(context, not used by the model)').first()).toBeVisible();
 
-  await page.fill('#patientRef', 'pt-mock-001');
+  await page.fill('#patientRef', REF);
   await fillExampleReport(page, { HGB: '40' }, { HGB: 'g/dL' });
   await page.getByRole('button', { name: 'Analyze CBC' }).click();
   await expect(page.getByText(/HGB outside supported range 2\.\.24 g\/dL/)).toBeVisible();
@@ -56,13 +58,20 @@ test('doctor: 10 CBC fields with units, four-class result and disclaimer', async
 
 test('doctor: nonsense input is caught in the form with a specific message', async ({ page }) => {
   await signIn(page, 'doctor3@fedhealth.demo');
-  await page.fill('#patientRef', '35202-1234567-1');
-  await expect(page.getByTestId('patient-ref-error')).toContainText('looks like a CNIC number');
-  await page.fill('#patientRef', 'pt-<script>');
-  await expect(page.getByTestId('patient-ref-error')).toContainText('only letters, digits');
+  // The field formats as you type; a complete ID with a wrong check character is refused.
+  await page.fill('#patientRef', 'fh00000000');
+  await expect(page.locator('#patientRef')).toHaveValue(REF);
+  await expect(page.getByTestId('patient-ref-error')).toHaveCount(0);
+  await page.fill('#patientRef', 'FH-0000-0001');
+  await expect(page.getByTestId('patient-ref-error')).toContainText('check character does not match');
+  await page.fill('#patientRef', '35202-1234567-1'); // a CNIC can never be stored as typed
+  await expect(page.locator('#patientRef')).not.toHaveValue('35202-1234567-1');
+  await expect(page.getByTestId('patient-ref-error')).toBeVisible();
   await page.fill('#ageYears', 'abc');
   await expect(page.getByTestId('age-error')).toContainText('whole number');
-  await page.fill('#patientRef', 'pt-mock-bad');
+  await page.getByTestId('new-patient-id').click();
+  await expect(page.locator('#patientRef')).toHaveValue(/^FH-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  await expect(page.getByTestId('patient-id-issued')).toContainText('Write it on the patient');
   await page.fill('#ageYears', '34');
 
   await page.fill('#cbc-HGB', 'abc');
@@ -192,4 +201,36 @@ test('NGO: profile province/district dropdowns, phone/email handling, and direct
   await page.getByRole('link', { name: 'Help Portal' }).click();
   await page.getByRole('tab', { name: 'NGO directory' }).click();
   await expect(page.getByText('Test Rescue Org')).toBeVisible();
+});
+
+test('lab engineer: lands on their own lab node dashboard (sample data) and can preview each node state', async ({ page }) => {
+  await signIn(page, 'engineer@lab.fedhealth.demo');
+  await expect(page).toHaveURL(/\/lab$/);
+  await expect(page.getByTestId('lab-name')).toHaveText('Aga Khan Lab - Karachi');
+  await expect(page.getByTestId('sample-banner')).toContainText('Sample data');
+  await expect(page.getByTestId('node-status')).toContainText('Online');
+  await expect(page.getByTestId('stat-rounds')).toHaveText('20 / 20');
+  await expect(page.getByTestId('rounds-table')).toContainText('Aggregated');
+  // Only the lab engineer's own areas are in the sidebar.
+  await expect(page.getByRole('link', { name: 'Surveillance' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Doctor Portal' })).toHaveCount(0);
+
+  await page.getByTestId('simulate-select').click();
+  await page.getByRole('option', { name: 'Offline' }).click();
+  await expect(page.getByTestId('node-status')).toContainText('Offline');
+  await expect(page.getByTestId('status-sentence')).toContainText('No heartbeat for');
+  await expect(page.getByTestId('rounds-table')).toContainText('Failed');
+});
+
+test('registration: a lab engineer must choose a lab', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: /create|register/i }).first().click();
+  await page.fill('#fullName', 'Lab Engineer');
+  await page.fill('#email', 'eng@lab.pk');
+  await page.fill('#password', 'long-enough-1');
+  await page.getByTestId('role-select').click();
+  await page.getByRole('option', { name: /Lab engineer/ }).click();
+  await expect(page.getByTestId('lab-select')).toBeVisible();
+  await page.getByRole('button', { name: /^(create|register)/i }).last().click();
+  await expect(page.getByRole('alert')).toContainText('Choose the lab you work at');
 });

@@ -42,10 +42,24 @@ async function handle(res, sentToken) {
     const message = (data && data.error) || FALLBACK[res.status] || res.statusText || 'Request failed';
     const err = new Error(message);
     err.status = res.status;
+    err.code = data && data.code; // e.g. PENDING_VERIFICATION, SPEECH_UNAVAILABLE
     err.data = data;
     throw err;
   }
   return data;
+}
+
+// Binary download (proof documents, CSV export): resolves to { blob, filename }.
+async function download(path) {
+  const token = tokenGetter();
+  const res = await fetch(`${BASE}${path}`, { headers: authHeaders() }).catch(() => {
+    const err = new Error('Cannot reach the FedHealth server. Check that it is running and try again.');
+    err.status = 0;
+    throw err;
+  });
+  if (!res.ok) return handle(res, token);
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '');
+  return { blob: await res.blob(), filename: name ? name[1] : 'download' };
 }
 
 // fetch() + a network-failure fallback (no response at all, e.g. server down)
@@ -92,4 +106,7 @@ export const api = {
   // multipart upload (OCR image). Do NOT set Content-Type; the browser adds the
   // multipart boundary automatically.
   upload: (path, formData) => send(path, { method: 'POST', headers: authHeaders(), body: formData }, tokenGetter()),
+
+  // Authenticated binary download -> { blob, filename }.
+  download,
 };

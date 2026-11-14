@@ -69,16 +69,23 @@ export function AuthProvider({ children }) {
   const login = useCallback((email, password) =>
     api.post('/auth/login', { email, password }), []);
 
-  const register = useCallback((payload) =>
-    api.post('/auth/register', payload), []);
+  // Registration is multipart: the account fields plus the proof-of-role document.
+  const register = useCallback(({ proof, ...fields }) => {
+    const form = new FormData();
+    Object.entries(fields).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') form.append(k, v); });
+    if (proof) form.append('proof', proof, proof.name);
+    return api.upload('/auth/register', form);
+  }, []);
 
   const mfaSetup = useCallback((preAuthToken) =>
     api.post('/auth/mfa/setup', {}, preAuthToken), []);
 
   const mfaVerifySetup = useCallback(async (preAuthToken, code) => {
-    const { accessToken } = await api.post('/auth/mfa/verify-setup', { code }, preAuthToken);
-    saveToken(accessToken);
-    return accessToken;
+    const r = await api.post('/auth/mfa/verify-setup', { code }, preAuthToken);
+    // A new account whose proof document is still unreviewed gets no session yet.
+    if (r.pendingVerification || !r.accessToken) return { pendingVerification: true };
+    saveToken(r.accessToken);
+    return { accessToken: r.accessToken };
   }, [saveToken]);
 
   const mfaVerify = useCallback(async (preAuthToken, code) => {

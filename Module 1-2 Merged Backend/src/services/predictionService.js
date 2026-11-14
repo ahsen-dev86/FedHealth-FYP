@@ -15,6 +15,8 @@ const Inference = require('./inferenceClient');
 const MlModels = require('../models/mlModels');
 const Predictions = require('../models/predictions');
 const alerting = require('./alerting');
+const explain = require('./explain');
+const guidance = require('./guidance');
 const { logEvent } = require('../middleware/audit');
 const { withTransaction } = require('../db/pool');
 const { HttpError } = require('../middleware/errors');
@@ -25,7 +27,7 @@ const DISCLAIMER = 'Screening support only, not a diagnosis. The model scores th
   + 'A doctor must confirm any condition.';
 
 /** Registry row id for the served (name, version); auto-registers an unknown version. */
-async function resolveModelId(name, version, classes, actor, db) {
+async function resolveModelId(name, version, classes, actor, db, { activate = true } = {}) {
   if (JSON.stringify(classes) !== JSON.stringify(CLASSES)) {
     throw new HttpError(502, `served classes ${JSON.stringify(classes)} do not match ${JSON.stringify(CLASSES)}`);
   }
@@ -42,7 +44,8 @@ async function resolveModelId(name, version, classes, actor, db) {
     diseaseScope: 'auto-registered from the inference service; no measured metrics recorded',
     classes,
   }, db);
-  await MlModels.setActive(reg.id, db);
+  // A version served by the backup replica is recorded but never becomes the active model.
+  if (activate) await MlModels.setActive(reg.id, db);
   await logEvent({
     actorUserId: actor?.id || null, actorRole: actor?.role_name || null,
     action: 'MODEL_AUTOREGISTER', resourceType: 'ml_model', resourceId: reg.id,
@@ -53,8 +56,19 @@ async function resolveModelId(name, version, classes, actor, db) {
 
 /** Persist a contract-checked inference result for a stored report (inside `db`). */
 async function persistPrediction({ report, inf, actor, db }) {
-  const modelId = await resolveModelId(inf.model_name, inf.model_version, inf.classes, actor, db);
+  const servedBy = inf.served_by === 'backup' ? 'backup' : 'primary';
+  const modelId = await resolveModelId(inf.model_name, inf.model_version, inf.classes, actor, db,
+    { activate: servedBy === 'primary' });
+  if (servedBy === 'backup') {
+    await logEvent({
+      actorUserId: actor?.id || null, actorRole: actor?.role_name || null,
+      action: 'MODEL_FAILOVER', resourceType: 'ml_model', resourceId: modelId,
+      metadata: { servedVersion: inf.model_version, reason: inf.failover_reason || null },
+    });
+  }
   const prediction = await Predictions.create({
+    servedBy,
+    explanation: inf.explanation || null,
     labReportId: report.id,
     modelId,
     scores: inf.scores,
@@ -95,6 +109,15 @@ function presentPrediction({ report, prediction, alerts, model, inf, warnings })
     },
     rule_flags: inf.rule_flags || {},
     alerts,
+    // Which replica answered; 'backup' means the fallback model produced these scores.
+    serving: {
+      servedBy: inf.served_by === 'backup' ? 'backup' : 'primary',
+      failoverReason: inf.failover_reason || null,
+    },
+    // Per-value reading against reference intervals + the model's Shapley attribution.
+    explanation: explain.buildExplanation({ canonical: report.cbc || inf.canonical_cbc || {}, inf, sex: report.sex }),
+    // Guideline-based next steps for the highest-scoring condition (doctor decides).
+    recommendations: guidance.summaryFor(inf.top_condition),
   };
 }
 

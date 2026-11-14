@@ -3,12 +3,22 @@
 // backend is not running. Creates throwaway e2e-ui-* accounts and reports.
 // Text assertions only.
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import { completeMfaSetup, fillExampleReport, totp, OLD_LABELS } from './helpers.js';
 
 const BACKEND = process.env.E2E_BACKEND_URL || 'http://127.0.0.1:4000';
 const RUN = Date.now();
+// Sign-up needs a proof document and an administrator's approval. The approval is done
+// straight in the database here (scripts/lib/e2eAccounts.js); the admin UI path is
+// covered by production.spec.js (mock) and scripts/e2e-production.js (API).
+const backendRequire = createRequire(path.resolve(path.dirname(fileURLToPath(import.meta.url)),
+  '../../Module 1-2 Merged Backend/scripts/e2e-acceptance.js'));
+backendRequire('dotenv').config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../Module 1-2 Merged Backend/.env') });
+const { approveByEmail, PROOF_PDF } = backendRequire('./lib/e2eAccounts');
+const PROOF = { name: 'e2e-licence.pdf', mimeType: 'application/pdf', buffer: PROOF_PDF };
+
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
   '../../Module 1-2 Merged Backend/test/fixtures/cbc_report.png');
 
@@ -25,22 +35,43 @@ async function registerDoctorViaUi(page, email) {
   await page.fill('#fullName', 'E2E UI Doctor');
   await page.fill('#email', email);
   await page.fill('#password', `Ui-${RUN}-pass`);
+  await page.getByTestId('proof-input').setInputFiles(PROOF);
+  await expect(page.getByTestId('proof-chosen')).toContainText('e2e-licence.pdf');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await completeMfaSetup(page);
+  const secret = await completeMfaSetup(page);
+  // No portal until the proof is approved.
+  await expect(page.getByTestId('awaiting-verification')).toBeVisible();
+  await page.goto('/login');
+  await page.fill('#email', email);
+  await page.fill('#password', `Ui-${RUN}-pass`);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByTestId('verification-notice')).toContainText('awaiting verification');
+  await approveByEmail(email);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.fill('#mfa-code', totp(secret));
+  await page.getByRole('button', { name: 'Verify' }).click();
   await expect(page.getByRole('heading', { name: 'Doctor Portal' })).toBeVisible();
   await expect(page.getByTestId('mock-banner'), 'live run must not use the mock client').toHaveCount(0);
 }
 
 /** NIH officials are created through the API (the UI flow is the same as the doctor's). */
 async function nihToken(request) {
+  const email = `e2e-ui-nih-${RUN}@nih.org.pk`;
+  const password = `Ui-${RUN}-pass`;
   const reg = await request.post('/api/auth/register', {
-    data: { email: `e2e-ui-nih-${RUN}@nih.org.pk`, password: `Ui-${RUN}-pass`, fullName: 'E2E UI NIH', role: 'nih_official' },
+    multipart: { email, password, fullName: 'E2E UI NIH', role: 'nih_official', proof: PROOF },
   });
   expect(reg.status()).toBe(201);
   const { preAuthToken } = await reg.json();
   const headers = { Authorization: `Bearer ${preAuthToken}` };
   const setup = await (await request.post('/api/auth/mfa/setup', { headers, data: {} })).json();
-  const verify = await request.post('/api/auth/mfa/verify-setup', { headers, data: { code: totp(setup.manualKey) } });
+  const enrolled = await request.post('/api/auth/mfa/verify-setup', { headers, data: { code: totp(setup.manualKey) } });
+  expect((await enrolled.json()).pendingVerification).toBe(true);
+  await approveByEmail(email);
+  const login = await (await request.post('/api/auth/login', { data: { email, password } })).json();
+  const verify = await request.post('/api/auth/mfa/verify', {
+    headers: { Authorization: `Bearer ${login.preAuthToken}` }, data: { code: totp(setup.manualKey) },
+  });
   return (await verify.json()).accessToken;
 }
 
@@ -59,7 +90,8 @@ test.describe.serial('live stack', () => {
 
   test('doctor registers with MFA and scores the example report with its printed units', async () => {
     await registerDoctorViaUi(page, `e2e-ui-doctor-${RUN}@fedhealth.test`);
-    await page.fill('#patientRef', `e2e-ui-pt-${RUN}`);
+    await page.getByTestId('new-patient-id').click();
+    await expect(page.locator('#patientRef')).toHaveValue(/^FH-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
     await page.selectOption('#district', 'Lahore');
     await fillExampleReport(page);
     await page.getByRole('button', { name: 'Analyze CBC' }).click();
@@ -74,6 +106,20 @@ test.describe.serial('live stack', () => {
     await expect(page.getByTestId('screening-disclaimer')).toContainText('not a diagnosis');
     await expect(page.getByText('All 10 were provided.')).toBeVisible();
     await expect(page.getByTestId('visit-table')).toContainText('Anemia 59%');
+    // Served by the primary model, with a real Shapley explanation and guideline next steps.
+    await expect(page.getByTestId('backup-served')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="xai-row-"]')).toHaveCount(10);
+    await expect(page.getByTestId('explanation-panel')).toContainText('exact Shapley values');
+    await expect(page.getByTestId('recommendations-card')).toContainText('Anaemia');
+    const [guide] = await Promise.all([page.waitForEvent('popup'), page.getByTestId('open-guidance').click()]);
+    await expect(guide.getByTestId('guidance-body')).toContainText('Serum ferritin', { timeout: 20000 });
+    await expect(guide.getByTestId('guidance-body')).toContainText('World Health Organization');
+    await guide.close();
+    // Confirming adds the case to the dataset.
+    await page.getByRole('combobox', { name: 'Confirmed condition' }).click();
+    await page.getByRole('option', { name: 'Anemia' }).click();
+    await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+    await expect(page.getByTestId('dataset-note')).toBeVisible();
   });
 
   test('image OCR (tesseract) fills the 10 values and printed units', async () => {

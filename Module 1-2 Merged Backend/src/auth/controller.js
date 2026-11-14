@@ -23,7 +23,10 @@ const totp = require('./totp');
 const { registerSchema, loginSchema, codeSchema } = require('./validators');
 const { asyncHandler, HttpError } = require('../middleware/errors');
 const { logEvent } = require('../middleware/audit');
-const { lockout } = require('../config');
+const { lockout, requireProofApproval } = require('../config');
+const Labs = require('../models/labs');
+const proof = require('./proof');
+const { withTransaction } = require('../db/pool');
 
 /** Small helper to record a login failure with a reason. */
 async function auditLoginFail(req, user, reason) {
@@ -44,24 +47,34 @@ const register = asyncHandler(async (req, res) => {
   const role = await Roles.getByName(data.role);
   if (!role) throw new HttpError(400, 'Unknown role');
 
+  // First sign-up needs proof of the claimed role (medical licence, employee
+  // card, NGO registration certificate). Checked before the password is hashed.
+  const document = proof.readProof(req.file, data.role);
+
   const passwordHash = await password.hash(data.password);
 
   // If this is an NIH official with a non-gov email, the DB trigger raises a
-  // check_violation, which errors.js turns into a clean 400.
-  const user = await Users.create({
-    email: data.email,
-    fullName: data.fullName,
-    roleId: role.id,
-    organization: data.organization || null,
-    labId: data.labId || null,
-    passwordHash,
+  // check_violation, which errors.js turns into a clean 400. The account and
+  // its proof are stored together or not at all.
+  const user = await withTransaction(async (db) => {
+    const created = await Users.create({
+      email: data.email,
+      fullName: data.fullName,
+      roleId: role.id,
+      organization: data.organization || null,
+      labId: data.labId || null,
+      passwordHash,
+      verificationStatus: 'pending',
+    }, db);
+    await Users.addProof(created.id, document, db);
+    return created;
   });
 
   await logEvent({
     actorUserId: user.id, actorRole: data.role, action: 'REGISTER',
     resourceType: 'user', resourceId: user.id,
     ip: req.ip, userAgent: req.headers['user-agent'] || null,
-    metadata: { role: data.role },
+    metadata: { role: data.role, proof: { docType: document.docType, mimeType: document.mimeType, sha256: document.sha256 } },
   });
 
   // Attach role_name so the pre-auth token carries the role.
@@ -73,9 +86,29 @@ const register = asyncHandler(async (req, res) => {
     email: user.email,
     status: user.status,   // 'pending' until MFA is enrolled
     mfaSetupRequired: true,
+    verificationStatus: 'pending', // an administrator reviews the proof before any portal opens
     preAuthToken,          // use this on POST /auth/mfa/setup
   });
 });
+
+/**
+ * Stop an account whose proof document is not approved. Called only after the
+ * caller has proven who they are (password, or password + MFA code), so the
+ * message can be specific without revealing anything to a stranger.
+ */
+async function assertVerified(req, user) {
+  if (!requireProofApproval || user.verification_status === 'approved') return;
+  const rejected = user.verification_status === 'rejected';
+  await logEvent({
+    actorUserId: user.id, actorRole: user.role_name, action: 'LOGIN_BLOCKED_UNVERIFIED',
+    ip: req.ip, userAgent: req.headers['user-agent'] || null,
+    metadata: { verification: user.verification_status },
+  });
+  throw new HttpError(403, rejected
+    ? `Your proof document was not accepted${user.verification_note ? `: ${user.verification_note}` : ''}. Contact the FedHealth administrator.`
+    : 'Your account is awaiting verification. An administrator is reviewing the proof document you uploaded; you can sign in once it is approved.',
+  rejected ? 'VERIFICATION_REJECTED' : 'PENDING_VERIFICATION');
+}
 
 // --- POST /auth/login -------------------------------------------------------
 const login = asyncHandler(async (req, res) => {
@@ -108,6 +141,10 @@ const login = asyncHandler(async (req, res) => {
 
   // Password correct — reset the failure counter.
   await Users.resetFailedLogins(user.id);
+
+  // An account that already enrolled MFA but whose proof is still unreviewed (or
+  // was rejected) is told so now, instead of after typing a code.
+  if (user.mfa_enabled) await assertVerified(req, user);
 
   // Issue a pre-auth token only; the caller must clear MFA to get real access.
   const needsSetup = !user.mfa_enabled;
@@ -158,8 +195,13 @@ const mfaVerifySetup = asyncHandler(async (req, res) => {
     ip: req.ip, userAgent: req.headers['user-agent'] || null,
   });
 
+  // MFA is enrolled, but no session is issued until the proof is approved.
+  if (requireProofApproval && user.verification_status !== 'approved') {
+    return res.json({ activated: true, pendingVerification: true, verificationStatus: user.verification_status });
+  }
+
   const accessToken = tokens.signAccess(user);
-  res.json({ activated: true, accessToken });
+  return res.json({ activated: true, accessToken });
 });
 
 // --- POST /auth/mfa/verify  (pre-auth 'mfa') --------------------------------
@@ -176,6 +218,8 @@ const mfaVerify = asyncHandler(async (req, res) => {
     });
     throw new HttpError(401, 'Invalid code');
   }
+
+  await assertVerified(req, user);
 
   await logEvent({
     actorUserId: user.id, actorRole: user.role_name, action: 'LOGIN_SUCCESS',
@@ -197,8 +241,17 @@ const me = asyncHandler(async (req, res) => {
     role: u.role_name,
     organization: u.organization,
     labId: u.lab_id,
+    verificationStatus: u.verification_status,
     permissions,
   });
 });
 
-module.exports = { register, login, mfaSetup, mfaVerifySetup, mfaVerify, me };
+// --- GET /auth/labs  (public) -----------------------------------------------
+// The registration form's lab picker for lab engineers. Only what is needed to
+// recognise a lab (id, name, town); no coordinates, LIMS or FL identifiers.
+const publicLabs = asyncHandler(async (req, res) => {
+  const labs = await Labs.listAll();
+  res.json(labs.map((l) => ({ id: l.id, name: l.name, district: l.district, province: l.province })));
+});
+
+module.exports = { register, login, mfaSetup, mfaVerifySetup, mfaVerify, me, publicLabs };

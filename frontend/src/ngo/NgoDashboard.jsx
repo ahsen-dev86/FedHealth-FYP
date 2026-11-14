@@ -37,7 +37,7 @@ const DONATION_METHODS = [
 
 // Editable form for the NGO's own public profile (name, mission, contact,
 // donation methods). Saves via PUT /help/ngos/me — always "my own NGO", no id.
-function ProfileForm({ ngo, onSaved }) {
+function ProfileForm({ ngo, onSaved, scope = '' }) {
   const { user } = useAuth();
   const [form, setForm] = useState(ngo);
   const [saving, setSaving] = useState(false);
@@ -46,8 +46,8 @@ function ProfileForm({ ngo, onSaved }) {
   // login email rather than leaving the field blank (the backend does the same
   // on first create; this also covers profiles that predate that change).
   useEffect(() => {
-    setForm({ ...ngo, contact_email: ngo.contact_email || user?.email || '' });
-  }, [ngo, user?.email]);
+    setForm({ ...ngo, contact_email: ngo.contact_email || (scope ? '' : user?.email) || '' });
+  }, [ngo, user?.email, scope]);
 
   const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setSaved(false); };
   const setPhone = (e) => {
@@ -81,7 +81,7 @@ function ProfileForm({ ngo, onSaved }) {
   async function save() {
     setSaving(true);
     try {
-      const updated = await api.put('/help/ngos/me', {
+      const updated = await api.put(`/help/ngos/me${scope}`, {
         name: form.name, mission: form.mission, description: form.description,
         website: form.website, contactEmail: form.contact_email, contactPhone: form.contact_phone,
         district: form.district, province: form.province, donationInfo: form.donation_info,
@@ -180,7 +180,7 @@ function ProfileForm({ ngo, onSaved }) {
 }
 
 // Modal form for posting a new supply request against the caller's own NGO.
-function NewRequestDialog({ onCreated }) {
+function NewRequestDialog({ onCreated, scope = '' }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
@@ -192,7 +192,7 @@ function NewRequestDialog({ onCreated }) {
     if (!form.title.trim()) return;
     setBusy(true);
     try {
-      const created = await api.post('/help/ngos/me/requests', {
+      const created = await api.post(`/help/ngos/me/requests${scope}`, {
         ...form, bloodGroup: form.category === 'blood' ? form.bloodGroup || undefined : undefined,
       });
       onCreated(created);
@@ -271,18 +271,44 @@ function NewRequestDialog({ onCreated }) {
 // Top-level page: loads the caller's NGO profile + its requests, then renders
 // the profile editor next to the request list/creator.
 export default function NgoDashboard() {
+  const { can, user } = useAuth();
+  // An administrator has no NGO of their own: they pick one and act on its behalf
+  // (the API accepts ?ngo=<id> only from an account holding help:manage_all).
+  const adminMode = user?.role !== 'ngo' && can('help:manage_all');
   const [ngo, setNgo] = useState(null);
   const [requests, setRequests] = useState(null);
   const [err, setErr] = useState('');
+  const [allNgos, setAllNgos] = useState(null);
+  const [selected, setSelected] = useState('');
+  const scope = adminMode ? `?ngo=${selected}` : '';
 
   useEffect(() => {
-    api.get('/help/ngos/me').then(setNgo).catch((e) => setErr(e.message));
-    api.get('/help/ngos/me/requests').then(setRequests).catch(() => setRequests([]));
-  }, []);
+    if (!adminMode) return;
+    api.get('/help/admin/ngos').then((rows) => {
+      setAllNgos(rows);
+      setSelected((cur) => cur || rows[0]?.id || '');
+    }).catch((e) => { setErr(e.message); setAllNgos([]); });
+  }, [adminMode]);
+
+  useEffect(() => {
+    if (adminMode && !selected) return;
+    setNgo(null); setRequests(null); setErr('');
+    api.get(`/help/ngos/me${scope}`).then(setNgo).catch((e) => setErr(e.message));
+    api.get(`/help/ngos/me/requests${scope}`).then(setRequests).catch(() => setRequests([]));
+  }, [adminMode, selected, scope]);
+
+  // Administrator only: the verified badge shown on the public Help Portal.
+  async function setVerified(verified) {
+    try {
+      const updated = await api.post(`/help/admin/ngos/${selected}/verified`, { verified });
+      setNgo(updated);
+      setAllNgos((rows) => rows.map((r) => (r.id === updated.id ? { ...r, verified: updated.verified } : r)));
+    } catch (e) { setErr(e.message); }
+  }
 
   // Inline status change (e.g. open -> fulfilled) for one of this NGO's requests.
   async function setStatus(id, status) {
-    const updated = await api.patch(`/help/ngos/me/requests/${id}`, { status });
+    const updated = await api.patch(`/help/ngos/me/requests/${id}${scope}`, { status });
     setRequests((rows) => rows.map((r) => (r.id === id ? updated : r)));
   }
 
@@ -290,23 +316,54 @@ export default function NgoDashboard() {
     <div>
       <div className="mb-4.5">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">Help Portal</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">My NGO</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{adminMode ? 'NGO Portal' : 'My NGO'}</h1>
       </div>
+
+      {adminMode && (
+        <div className="mb-4 rounded-xl border border-border bg-card p-3.5" data-testid="admin-ngo-picker">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Label htmlFor="admin-ngo">Managing as administrator</Label>
+              <select id="admin-ngo" value={selected} onChange={(e) => setSelected(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50">
+                {allNgos == null && <option value="">Loading NGOs…</option>}
+                {allNgos?.length === 0 && <option value="">No NGO has registered yet</option>}
+                {allNgos?.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name}{n.verified ? ' ✓' : ''} · {n.open_request_count} open / {n.request_count} requests
+                  </option>
+                ))}
+              </select>
+            </div>
+            {ngo && (
+              <Button variant={ngo.verified ? 'outline' : 'default'} className="h-9 shrink-0" onClick={() => setVerified(!ngo.verified)} data-testid="toggle-verified">
+                {ngo.verified ? 'Remove verified badge' : 'Mark as verified'}
+              </Button>
+            )}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            You can edit this NGO's public profile and post or update its requests. Every change is recorded in the audit log under your account.
+            {ngo?.owner_email ? ` Owner account: ${ngo.owner_email}.` : ''}
+          </p>
+        </div>
+      )}
 
       {err && (
         <Alert variant="destructive" className="mb-4"><AlertDescription>{err}</AlertDescription></Alert>
       )}
 
-      {!ngo ? (
-        <p className="text-sm text-muted-foreground">Loading your profile…</p>
+      {adminMode && allNgos?.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No NGO has registered yet. NGO accounts appear here after their first sign-in.</p>
+      ) : !ngo ? (
+        <p className="text-sm text-muted-foreground">{err ? '' : 'Loading profile…'}</p>
       ) : (
         <div className="grid items-start gap-5 lg:grid-cols-[1fr_1.1fr]">
-          <ProfileForm ngo={ngo} onSaved={setNgo} />
+          <ProfileForm key={ngo.id} ngo={ngo} onSaved={setNgo} scope={scope} />
 
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle>My requests</CardTitle>
-              <NewRequestDialog onCreated={(r) => setRequests((rows) => [r, ...(rows || [])])} />
+              <CardTitle>{adminMode ? 'Requests' : 'My requests'}</CardTitle>
+              <NewRequestDialog scope={scope} onCreated={(r) => setRequests((rows) => [r, ...(rows || [])])} />
             </CardHeader>
             <CardContent className="space-y-2.5">
               {requests == null && <p className="text-sm text-muted-foreground">Loading…</p>}

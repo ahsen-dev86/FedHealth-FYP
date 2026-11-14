@@ -54,6 +54,19 @@ const MULTER = {
   LIMIT_PART_COUNT: [400, 'Too many form fields'],
   LIMIT_FIELD_VALUE: [413, 'A form field is too large'],
 };
+// The same Multer codes worded for the other upload routes (matched on the request path).
+const MULTER_BY_ROUTE = {
+  '/auth/register': {
+    LIMIT_FILE_SIZE: [413, 'The proof document is larger than 5 MB'],
+    LIMIT_FILE_COUNT: [400, 'Upload one proof document'],
+    LIMIT_UNEXPECTED_FILE: [400, 'Upload the proof document in the field "proof"'],
+  },
+  '/symptoms/transcribe': {
+    LIMIT_FILE_SIZE: [413, 'The recording is larger than 10 MB; record a shorter clip'],
+    LIMIT_FILE_COUNT: [400, 'Send one recording at a time'],
+    LIMIT_UNEXPECTED_FILE: [400, 'Send the recording in the field "audio"'],
+  },
+};
 
 // Terminal error middleware: classifies the error (Zod/body-parser/Multer/Postgres/
 // HttpError/unknown) and responds with a matching status + safe message.
@@ -69,7 +82,8 @@ function errorHandler(err, req, res, next) {
     return res.status(415).json({ error: 'Unsupported request encoding' });
   }
   if (err.name === 'MulterError') {
-    const [status, message] = MULTER[err.code] || [400, 'Invalid upload'];
+    const byRoute = MULTER_BY_ROUTE[(req.originalUrl || '').split('?')[0]] || {};
+    const [status, message] = byRoute[err.code] || MULTER[err.code] || [400, 'Invalid upload'];
     return res.status(status).json({ error: message });
   }
 

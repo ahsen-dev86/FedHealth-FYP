@@ -1,0 +1,284 @@
+{
+  "version": "2026-11",
+  "reviewNote": "Summaries of published guidance written for FedHealth. They have not been reviewed by a clinical governance board; a deployment must have its own haematology lead review and localise this file before clinical use.",
+  "disclaimer": "Decision support only. These are general next steps drawn from published guidelines for the condition with the highest screening score. They are not a diagnosis or a prescription and do not replace clinical judgement, local protocols or specialist advice. No drug doses are given: follow the national formulary.",
+  "sources": {
+    "who-hb-2024": {
+      "org": "World Health Organization",
+      "title": "Guideline on haemoglobin cutoffs to define anaemia in individuals and populations",
+      "year": 2024,
+      "url": "https://www.who.int/publications/i/item/9789240088542"
+    },
+    "who-anaemia-fs": {
+      "org": "World Health Organization",
+      "title": "Anaemia (fact sheet)",
+      "year": 2025,
+      "url": "https://www.who.int/news-room/fact-sheets/detail/anaemia"
+    },
+    "who-ferritin-2020": {
+      "org": "World Health Organization",
+      "title": "WHO guideline on use of ferritin concentrations to assess iron status in individuals and populations",
+      "year": 2020,
+      "url": "https://www.who.int/publications/i/item/9789240000124"
+    },
+    "tif-tdt-2021": {
+      "org": "Thalassaemia International Federation",
+      "title": "Guidelines for the Management of Transfusion-Dependent Thalassaemia, 4th edition",
+      "year": 2021,
+      "url": "https://thalassaemia.org.cy/publications/tif-publications/guidelines-for-the-management-of-transfusion-dependent-thalassaemia-4th-edition-2021-v2/"
+    },
+    "tif-ntdt-2023": {
+      "org": "Thalassaemia International Federation",
+      "title": "Guidelines for the Management of Non-Transfusion-Dependent β-Thalassaemia, 3rd edition",
+      "year": 2023,
+      "url": "https://thalassaemia.org.cy/publications/tif-publications/"
+    },
+    "nice-ng12": {
+      "org": "National Institute for Health and Care Excellence (NICE)",
+      "title": "Suspected cancer: recognition and referral (NG12)",
+      "year": 2015,
+      "url": "https://www.nice.org.uk/guidance/ng12"
+    },
+    "eln-aml-2022": {
+      "org": "European LeukemiaNet",
+      "title": "Diagnosis and management of AML in adults: 2022 recommendations from an international expert panel (Döhner et al., Blood 140:1345-1377)",
+      "year": 2022,
+      "url": "https://doi.org/10.1182/blood.2022016867"
+    },
+    "who-childhood-cancer-fs": {
+      "org": "World Health Organization",
+      "title": "Childhood cancer (fact sheet)",
+      "year": 2025,
+      "url": "https://www.who.int/news-room/fact-sheets/detail/cancer-in-children"
+    }
+  },
+  "conditions": {
+    "healthy": {
+      "title": "No blood disorder pattern detected",
+      "urgency": "routine",
+      "urgencyLabel": "Routine",
+      "summary": "The model scored this CBC highest for 'healthy'. A normal-looking count does not exclude disease: early iron deficiency, thalassaemia trait with borderline indices and other conditions can sit inside reference intervals.",
+      "confirmatoryTests": [
+        {
+          "test": "Compare the values with the reference interval printed on the report",
+          "why": "The model sees only ten numbers. Check that haemoglobin is above the WHO anaemia cut-off for the patient's age, sex and pregnancy status.",
+          "sources": ["who-hb-2024"]
+        },
+        {
+          "test": "Peripheral blood film if symptoms persist",
+          "why": "Persistent pallor, fatigue, bruising, fever or weight loss with a normal count still warrants a film and clinical review.",
+          "sources": ["nice-ng12"]
+        }
+      ],
+      "management": [
+        {
+          "step": "No treatment indicated by this result",
+          "detail": "Manage the presenting complaint on its own merits. Give dietary advice on iron-rich foods where intake is poor.",
+          "sources": ["who-anaemia-fs"]
+        },
+        {
+          "step": "Repeat the CBC if symptoms continue or new signs appear",
+          "detail": "A trend across visits (see the longitudinal chart) is more informative than one count.",
+          "sources": []
+        }
+      ],
+      "redFlags": [
+        "Symptoms out of proportion to the count",
+        "Unexplained bruising, bleeding, persistent fever or weight loss",
+        "Family history of thalassaemia with planned pregnancy (carrier testing is done on haemoglobin analysis, not on the CBC alone)"
+      ]
+    },
+    "anemia": {
+      "title": "Anaemia: confirm, find the cause, then treat the cause",
+      "urgency": "soon",
+      "urgencyLabel": "Work up within days",
+      "summary": "WHO defines anaemia by haemoglobin below a cut-off for age, sex and pregnancy status. Anaemia is a finding, not a final diagnosis: treatment depends on the underlying cause, which is most often iron deficiency but also includes other nutritional deficiencies, infection, chronic disease, blood loss and inherited red cell disorders.",
+      "confirmatoryTests": [
+        {
+          "test": "Confirm haemoglobin against the WHO cut-off",
+          "why": "Adults: below 130 g/L in men and below 120 g/L in non-pregnant women. Pregnancy: below 110 g/L in the first and third trimesters and below 105 g/L in the second. Children have age-specific cut-offs. Adjust for smoking and altitude as the guideline describes.",
+          "sources": ["who-hb-2024"]
+        },
+        {
+          "test": "Serum ferritin (with CRP where infection or inflammation is likely)",
+          "why": "Ferritin is the WHO-recommended marker of iron stores. It rises with inflammation, so a normal value does not exclude iron deficiency in an unwell patient.",
+          "sources": ["who-ferritin-2020"]
+        },
+        {
+          "test": "Peripheral blood film and reticulocyte count",
+          "why": "Shows red cell size and shape and whether the marrow is responding, separating reduced production from loss or destruction.",
+          "sources": ["who-anaemia-fs"]
+        },
+        {
+          "test": "Vitamin B12 and folate when MCV is raised",
+          "why": "Macrocytic anaemia points to B12 or folate deficiency rather than iron deficiency.",
+          "sources": ["who-anaemia-fs"]
+        },
+        {
+          "test": "Haemoglobin analysis (HPLC or electrophoresis) when MCV and MCH are low with a normal or raised red cell count",
+          "why": "Thalassaemia trait mimics iron deficiency on a CBC. Check iron status first: iron deficiency lowers HbA2 and can hide beta-thalassaemia trait.",
+          "sources": ["tif-ntdt-2023", "who-anaemia-fs"]
+        },
+        {
+          "test": "Look for the source: menstrual history, gastrointestinal blood loss, diet, pregnancy, malaria and intestinal parasites where endemic, renal function",
+          "why": "WHO lists these among the main causes; the cause determines the treatment.",
+          "sources": ["who-anaemia-fs"]
+        }
+      ],
+      "management": [
+        {
+          "step": "Treat the cause",
+          "detail": "WHO: treatment and prevention of anaemia depend on the underlying cause. Correct blood loss, infection or deficiency rather than the number alone.",
+          "sources": ["who-anaemia-fs"]
+        },
+        {
+          "step": "Iron deficiency: oral iron and dietary advice",
+          "detail": "Iron supplementation at the dose and duration in the national formulary, iron-rich foods, and separating iron from calcium supplements. Recheck haemoglobin to confirm a response; no response should prompt review of adherence, ongoing loss or an alternative diagnosis.",
+          "sources": ["who-anaemia-fs"]
+        },
+        {
+          "step": "Do not give iron on the CBC alone when thalassaemia trait is possible",
+          "detail": "Microcytosis with normal ferritin is not iron deficiency; unnecessary iron carries a risk of iron overload in thalassaemia.",
+          "sources": ["tif-ntdt-2023"]
+        },
+        {
+          "step": "Refer or admit severe or symptomatic anaemia",
+          "detail": "Very low haemoglobin, breathlessness at rest, chest pain, haemodynamic compromise or active bleeding need urgent hospital assessment; transfusion decisions follow local protocol.",
+          "sources": ["who-hb-2024"]
+        }
+      ],
+      "redFlags": [
+        "Haemoglobin in the WHO 'severe' range, or symptoms at rest",
+        "Anaemia with low platelets or abnormal white cells (consider marrow disease: urgent film)",
+        "Unexplained iron deficiency in men or post-menopausal women (look for gastrointestinal blood loss)",
+        "Pregnancy"
+      ]
+    },
+    "thalassemia": {
+      "title": "Thalassaemia pattern: confirm with haemoglobin analysis",
+      "urgency": "soon",
+      "urgencyLabel": "Confirm within weeks",
+      "summary": "A CBC can only suggest thalassaemia (typically low MCV and MCH with a preserved or raised red cell count). The diagnosis is made by haemoglobin analysis and, where needed, DNA testing. Carriers are well and need counselling, not treatment; transfusion-dependent disease needs lifelong specialist care.",
+      "confirmatoryTests": [
+        {
+          "test": "Haemoglobin analysis by HPLC or capillary electrophoresis, with HbA2 and HbF quantification",
+          "why": "Raised HbA2 identifies beta-thalassaemia trait; the pattern of HbF and variant haemoglobins separates the syndromes.",
+          "sources": ["tif-tdt-2021"]
+        },
+        {
+          "test": "Serum ferritin before interpreting HbA2",
+          "why": "Coexisting iron deficiency lowers HbA2 and can mask beta-thalassaemia trait; it also tells you whether iron is safe to give.",
+          "sources": ["tif-tdt-2021", "who-ferritin-2020"]
+        },
+        {
+          "test": "Peripheral blood film",
+          "why": "Microcytic hypochromic cells, target cells and basophilic stippling support the diagnosis.",
+          "sources": ["tif-tdt-2021"]
+        },
+        {
+          "test": "DNA analysis of the globin genes when haemoglobin analysis is inconclusive",
+          "why": "Alpha-thalassaemia trait usually has a normal haemoglobin analysis and is confirmed by molecular testing; genotype also guides prenatal diagnosis.",
+          "sources": ["tif-tdt-2021"]
+        },
+        {
+          "test": "Test the partner and first-degree relatives",
+          "why": "Thalassaemia is inherited. Cascade (family) screening finds at-risk couples before a pregnancy.",
+          "sources": ["tif-tdt-2021"]
+        }
+      ],
+      "management": [
+        {
+          "step": "Carrier (trait): reassure and counsel",
+          "detail": "No treatment is needed. Offer genetic counselling and partner testing; avoid iron unless iron deficiency is proven.",
+          "sources": ["tif-tdt-2021"]
+        },
+        {
+          "step": "Suspected thalassaemia major or intermedia: refer to a thalassaemia or haematology centre",
+          "detail": "Specialist care decides whether regular transfusion is needed and supervises it.",
+          "sources": ["tif-tdt-2021", "tif-ntdt-2023"]
+        },
+        {
+          "step": "Transfusion-dependent disease: regular transfusion with iron chelation",
+          "detail": "TIF recommends a regular transfusion programme with monitoring of iron load (serum ferritin, and cardiac and liver iron by MRI where available) and chelation therapy, with surveillance for cardiac, liver, endocrine and bone complications.",
+          "sources": ["tif-tdt-2021"]
+        },
+        {
+          "step": "Discuss curative and newer options at a specialist centre",
+          "detail": "Haematopoietic stem cell transplantation is the established curative option for eligible patients with a suitable donor.",
+          "sources": ["tif-tdt-2021"]
+        }
+      ],
+      "redFlags": [
+        "A child with pallor, poor growth, jaundice or an enlarged spleen (possible thalassaemia major: refer promptly)",
+        "Pregnancy or a couple planning pregnancy where one partner is a known carrier",
+        "Iron already prescribed without a ferritin result"
+      ]
+    },
+    "leukemia": {
+      "title": "Possible leukaemia: urgent film and haematology referral",
+      "urgency": "urgent",
+      "urgencyLabel": "Urgent: act within 48 hours",
+      "summary": "A CBC cannot diagnose leukaemia. A high score means the count resembles those of patients with leukaemia in the training data, which needs to be confirmed or excluded quickly. Diagnosis rests on the blood film and bone marrow examination with immunophenotyping and genetic testing, done by a haematology service.",
+      "confirmatoryTests": [
+        {
+          "test": "Urgent repeat full blood count with a manual differential and peripheral blood film",
+          "why": "Circulating blasts, or cytopenias with abnormal white cells, are the key finding. NICE advises a very urgent full blood count (within 48 hours) when leukaemia is suspected.",
+          "sources": ["nice-ng12"]
+        },
+        {
+          "test": "Same-day discussion with, or urgent referral to, haematology",
+          "why": "NICE advises immediate specialist assessment for children and young people with unexplained petechiae or hepatosplenomegaly; adults with a film suggesting acute leukaemia need immediate specialist assessment too.",
+          "sources": ["nice-ng12"]
+        },
+        {
+          "test": "Bone marrow aspirate (and trephine biopsy) with morphology",
+          "why": "Confirms the diagnosis and the blast percentage.",
+          "sources": ["eln-aml-2022"]
+        },
+        {
+          "test": "Immunophenotyping by flow cytometry",
+          "why": "Separates myeloid from lymphoid leukaemia and identifies the subtype.",
+          "sources": ["eln-aml-2022"]
+        },
+        {
+          "test": "Cytogenetics and molecular testing",
+          "why": "Defines the disease category and genetic risk group, which determine treatment.",
+          "sources": ["eln-aml-2022"]
+        },
+        {
+          "test": "Baseline safety tests: coagulation screen, urea and electrolytes, uric acid, LDH, liver function, blood group",
+          "why": "Looks for coagulopathy, tumour lysis and organ involvement before treatment starts.",
+          "sources": ["eln-aml-2022"]
+        }
+      ],
+      "management": [
+        {
+          "step": "Do not start treatment in primary care; refer urgently",
+          "detail": "Leukaemia is treated by a specialist haematology or oncology team after the subtype and risk group are established.",
+          "sources": ["nice-ng12", "eln-aml-2022"]
+        },
+        {
+          "step": "Stabilise while arranging transfer",
+          "detail": "Treat fever in a patient with low neutrophils as an emergency under the local neutropenic sepsis protocol; manage bleeding and symptomatic anaemia with blood product support as locally indicated.",
+          "sources": ["eln-aml-2022"]
+        },
+        {
+          "step": "Definitive treatment is subtype-specific",
+          "detail": "Typically risk-adapted chemotherapy, targeted agents where a target is present, and stem cell transplantation for selected patients; chronic leukaemias follow different, often outpatient, pathways.",
+          "sources": ["eln-aml-2022"]
+        },
+        {
+          "step": "Children: refer to a paediatric oncology centre",
+          "detail": "WHO notes that most childhood cancers, including leukaemia, can be cured when diagnosed early and treated in a specialised centre.",
+          "sources": ["who-childhood-cancer-fs"]
+        }
+      ],
+      "redFlags": [
+        "Fever with a low neutrophil count (emergency)",
+        "Bleeding, widespread bruising or petechiae",
+        "Very high white cell count with breathlessness, headache or confusion",
+        "A child or young person with unexplained petechiae or hepatosplenomegaly"
+      ]
+    }
+  }
+}

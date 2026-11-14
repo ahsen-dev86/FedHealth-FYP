@@ -56,3 +56,24 @@ export const CBC_FIELDS = FEATURES.map((key) => ({
 export function symptomLabel(tag) {
   return String(tag).replace(/_/g, ' ');
 }
+
+// "12 s ago" / "5 min ago" / "3 h ago" / "2 d ago" for a timestamp; '—' when there is none.
+// `now` is injectable so a ticking component (and tests) control the clock.
+export function relativeTime(iso, now = Date.now()) {
+  if (!iso) return '—';
+  const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s} s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+
+// "5 h 12 min" style span between two timestamps (for "no heartbeat for …").
+export function spanBetween(fromIso, now = Date.now()) {
+  const m = Math.max(0, Math.round((now - new Date(fromIso).getTime()) / 60000));
+  if (m < 1) return 'under a minute';
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h} h ${m % 60} min` : `${Math.floor(h / 24)} d ${h % 24} h`;
+}
