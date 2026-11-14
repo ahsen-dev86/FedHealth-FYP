@@ -175,12 +175,28 @@ if ($Status -or $Start) {
   }
 }
 
+# Kill a process and its children. Never throws: under $ErrorActionPreference = 'Stop',
+# Windows PowerShell turns taskkill's stderr ("process not found") into a terminating
+# error, which used to abort -Stop before the remaining services were stopped.
+function Stop-Tree([int]$Id) {
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { & taskkill.exe /PID $Id /T /F 2>$null | Out-Null } catch { } finally { $ErrorActionPreference = $previous }
+}
+
 if ($Stop) {
-  # Kill each started process with its children (npm -> vite, etc.).
+  # Kill each started process with its children (npm -> vite, etc.). A recorded PID
+  # may be stale (the service was restarted by hand) or reused by an unrelated
+  # program, so only a live node/python/npm process is stopped.
   $pids = Read-Pids
   foreach ($name in $pids.Keys) {
-    & taskkill.exe /PID $pids[$name] /T /F 2>&1 | Out-Null
-    Write-Host "stopped $name"
+    $proc = Get-Process -Id $pids[$name] -ErrorAction SilentlyContinue
+    if ($proc -and $proc.ProcessName -match '^(node|python|npm|cmd)') {
+      Stop-Tree $pids[$name]
+      Write-Host "stopped $name"
+    } else {
+      Write-Host "$name was not running (recorded pid $($pids[$name]))"
+    }
   }
   if (Test-Path $PidFile) { Remove-Item $PidFile }
   # Fallback: anything still listening on our ports that is node/python (e.g. PID file lost).
@@ -190,7 +206,7 @@ if ($Stop) {
     foreach ($id in $owners) {
       $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
       if ($proc -and $proc.ProcessName -match '^(node|python)') {
-        & taskkill.exe /PID $id /T /F 2>&1 | Out-Null
+        Stop-Tree $id
         Write-Host "stopped $($proc.ProcessName) on :$port"
       }
     }
