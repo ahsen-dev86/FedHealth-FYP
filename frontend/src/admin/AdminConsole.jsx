@@ -10,9 +10,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ShieldCheck, Stethoscope, Radar, ActivitySquare, FlaskConical, Building2, HeartHandshake, FileText, Check, X,
-  UserX, UserCheck, RefreshCw, Download, ServerCog, Database, AlertCircle, ArrowRight,
+  UserX, UserCheck, Download, ServerCog, Database, AlertCircle, ArrowRight,
 } from 'lucide-react';
 import { api } from '../api/client';
+import ModelServingCard from '../model-health/ModelServingCard';
 import { conditionLabel, relativeTime } from '../lib/format';
 import { CLASSES } from '../lib/contract';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -137,69 +138,13 @@ function ProofDialog({ account, onClose, onDecision }) {
   );
 }
 
+// Primary / backup serving status with the failover-drill switch (shared with Model Health).
 function ServingCard() {
-  const [status, setStatus] = useState(null);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const load = useCallback(() => api.get('/admin/serving').then(setStatus).catch((e) => setErr(e.message)), []);
-  useEffect(() => { load(); }, [load]);
-
-  const inProcess = status?.primary?.failover;
-  const drill = !!inProcess?.drill_active;
-  async function toggleDrill() {
-    setBusy(true); setErr('');
-    try { setStatus(await api.post('/admin/failover-drill', { primaryDown: !drill })); } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }
-  const dot = (ok) => <span className={`size-2 shrink-0 rounded-full ${ok ? 'bg-success' : 'bg-destructive'}`} />;
-
   return (
     <Card data-testid="serving-card">
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle className="flex items-center gap-2"><ServerCog className="size-4 text-primary" /> Model serving</CardTitle>
-        <Button variant="ghost" size="icon-sm" onClick={load} aria-label="Refresh serving status"><RefreshCw /></Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {!status && !err && <p className="text-sm text-muted-foreground">Checking…</p>}
-        {status && (
-          <>
-            <div className={`rounded-lg border px-3 py-2.5 text-sm ${status.serving === 'primary' ? 'border-success/40 bg-success/5' : status.serving === 'backup' ? 'border-warning/50 bg-warning/5' : 'border-destructive/40 bg-destructive/5'}`}
-                 data-testid="serving-state">
-              <span className="font-medium text-foreground">
-                {status.serving === 'primary' ? 'Primary model is serving' : status.serving === 'backup' ? 'Backup model is serving' : 'No model can serve'}
-              </span>
-              <span className="text-muted-foreground">
-                {status.serving === 'backup' ? (drill ? ' — failover drill in progress.' : ' — the primary is down; predictions continue on the fallback.') : ''}
-                {status.serving === 'none' ? ' — predictions will fail until a model is restored.' : ''}
-              </span>
-            </div>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-start gap-2">{dot(status.primary?.ok && inProcess?.primary?.mode !== 'unavailable' && !drill)}
-                <div className="min-w-0"><div className="text-foreground">Primary model</div>
-                  <div className="truncate font-mono text-xs text-muted-foreground">{inProcess?.primary?.version || status.primary?.error || 'unreachable'}</div></div></li>
-              <li className="flex items-start gap-2">{dot(inProcess?.backup && inProcess.backup.mode !== 'unavailable')}
-                <div className="min-w-0"><div className="text-foreground">Backup model <span className="text-muted-foreground">(loaded beside the primary)</span></div>
-                  <div className="truncate font-mono text-xs text-muted-foreground">{inProcess?.backup?.version || 'not configured'}</div></div></li>
-              <li className="flex items-start gap-2">{dot(status.backupReplica?.ok)}
-                <div className="min-w-0"><div className="text-foreground">Backup replica <span className="text-muted-foreground">(separate process)</span></div>
-                  <div className="truncate font-mono text-xs text-muted-foreground">
-                    {status.backupReplica?.configured ? (status.backupReplica.version || status.backupReplica.error || 'unreachable') : 'not configured'}</div></div></li>
-            </ul>
-            {status.breaker?.failovers > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {status.breaker.failovers} request(s) answered by the replica since the API started
-                {status.breaker.lastFailureAt ? `; last primary fault ${relativeTime(status.breaker.lastFailureAt)}` : ''}.
-              </p>
-            )}
-            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-              <Button variant={drill ? 'default' : 'outline'} className="h-9" onClick={toggleDrill}
-                      disabled={busy || !status.primary?.ok || (!drill && !inProcess?.backup)} data-testid="failover-drill">
-                {busy ? 'Working…' : drill ? 'End drill: restore primary' : 'Run failover drill'}
-              </Button>
-              <span className="text-[11px] text-muted-foreground">Marks the primary as down so you can see predictions continue on the backup.</span>
-            </div>
-          </>
-        )}
-        {err && <p className="text-sm text-destructive" role="alert">{err}</p>}
+      <CardHeader><CardTitle className="flex items-center gap-2"><ServerCog className="size-4 text-primary" /> Model serving</CardTitle></CardHeader>
+      <CardContent>
+        <ModelServingCard onDrill={(primaryDown) => api.post('/admin/failover-drill', { primaryDown })} />
       </CardContent>
     </Card>
   );

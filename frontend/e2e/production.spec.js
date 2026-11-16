@@ -194,3 +194,34 @@ test('admin: reaches every portal, manages any NGO, and the backup model takes o
   await page.getByTestId('failover-drill').click();
   await expect(page.getByTestId('serving-state')).toContainText('Primary model is serving');
 });
+
+test('Model Health shows primary and backup model availability', async ({ page }) => {
+  await signIn(page, 'officer7@nih.org.pk');
+  await page.getByRole('link', { name: 'Model Health' }).click();
+  const card = page.getByTestId('model-serving');
+  await expect(card).toBeVisible();
+  await expect(page.getByTestId('serving-state')).toContainText('Primary model is serving');
+  await expect(page.getByTestId('serving-primary')).toContainText('seed42');
+  await expect(page.getByTestId('serving-primary')).toContainText('Available');
+  await expect(page.getByTestId('serving-backup')).toContainText('seed52');
+  await expect(page.getByTestId('serving-backup')).toContainText('Test accuracy 89.4%');
+  await expect(page.getByTestId('serving-backup')).toContainText('Separate replica: ready');
+  await expect(page.getByTestId('serving-usage')).toContainText('served by the backup');
+  // Read-only here: the drill switch lives in the Admin Console.
+  await expect(page.getByTestId('failover-drill')).toHaveCount(0);
+});
+
+test('Help Portal has a way back to the landing page', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Help Portal' }).first().click();
+  await expect(page).toHaveURL(/\/help$/);
+  await page.getByTestId('help-home').click();
+  await expect(page.getByTestId('landing')).toBeVisible();
+  // Also from an NGO profile page.
+  await page.goto('/help');
+  await page.getByRole('tab', { name: 'NGO directory' }).click();
+  await page.getByRole('link', { name: /View profile/ }).first().click();
+  await expect(page).toHaveURL(/\/help\/ngos\//);
+  await page.getByTestId('help-home').click();
+  await expect(page.getByTestId('landing')).toBeVisible();
+});

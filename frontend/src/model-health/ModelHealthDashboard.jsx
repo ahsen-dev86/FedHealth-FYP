@@ -21,6 +21,7 @@ import NodeStatusTable, { SampleNodeStatus } from './NodeStatusTable';
 import NodeContributionChart from './NodeContributionChart';
 import TrainingDataCharts from './TrainingDataCharts';
 import DataIntakeCharts from './DataIntakeCharts';
+import ModelServingCard from './ModelServingCard';
 
 const SPANS = [
   ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'],
@@ -118,6 +119,11 @@ export default function ModelHealthDashboard() {
           <CardContent><EncryptionStatusCard status={encryption} /></CardContent>
         </Card>
       </div>
+
+      <Card className="mt-5">
+        <CardHeader><CardTitle>Model serving: primary and backup</CardTitle></CardHeader>
+        <CardContent><ModelServingCard /></CardContent>
+      </Card>
 
       <Card className="mt-5">
         <CardHeader>
