@@ -108,11 +108,14 @@ const accounts = [
 const dataset = new Map(); // record key -> { label, cbc, modelTop }
 let confirmations = 0;
 const predictions = new Map(); // prediction id -> { canonical, top }
-const serving = { drill: false, failovers: 0 };
+const serving = { drill: false, failovers: 0, backupServed: 0, lastBackupAt: null };
 const adminRequests = new Map(); // ngo id -> requests created by the admin this session
 
 export const servedBy = () => (serving.drill ? 'backup' : 'primary');
-export function rememberPrediction(id, canonical, top) { predictions.set(String(id), { canonical, top }); }
+export function rememberPrediction(id, canonical, top) {
+  predictions.set(String(id), { canonical, top });
+  if (serving.drill) { serving.backupServed += 1; serving.lastBackupAt = new Date().toISOString(); }
+}
 
 /** Account state for a mock login; null when the email never registered this session. */
 export function accountFor(email) {
@@ -263,6 +266,20 @@ export async function extraRoute({ method, pathname, params, body, session, ngoD
     backupReplica: { configured: true, ok: true, error: null, version: 'v2-four-class-seed52 (mock)' },
     breaker: { open: false, lastError: null, lastFailureAt: null, failovers: serving.failovers },
   });
+  if (pathname === '/model-health/serving' && method === 'GET') {
+    if (!['admin', 'nih_official'].includes(session?.role)) throw mockError(403, 'Missing permission(s): nih:dashboard');
+    await delay(200);
+    return {
+      checkedAt: new Date().toISOString(), serving: servedBy(), drillActive: serving.drill,
+      primary: { reachable: true, available: true, version: 'v2-four-class-seed42 (mock)', mode: 'centralized_hybrid', reason: null,
+                 registered: true, active: true, testAccuracy: 0.8875, macroF1: 0.8869 },
+      backup: { configured: true, inProcess: { available: true, reason: null }, replica: { available: true },
+                version: 'v2-four-class-seed52 (mock)', registered: true, active: false, testAccuracy: 0.8938, macroF1: 0.8937 },
+      breaker: { open: false, failoversSinceStart: serving.failovers, lastPrimaryFaultAt: null },
+      usage: { days: Number(params.get('days')) || 30, predictions: predictions.size, servedByBackup: serving.backupServed,
+               lastServedByBackupAt: serving.lastBackupAt },
+    };
+  }
   if (pathname === '/admin/serving' && method === 'GET') { adminOnly(); await delay(200); return servingStatus(); }
   if (pathname === '/admin/failover-drill' && method === 'POST') {
     adminOnly(); await delay(400);

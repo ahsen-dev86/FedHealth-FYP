@@ -131,6 +131,14 @@ async function main() {
   check('drill ended, primary serving again', off.status === 200 && off.data.serving === 'primary');
   const health = (await call('GET', '/health/inference')).data;
   check('backup replica is up', health.backupReplica?.ok === true, `replica ${health.backupReplica?.version}`);
+  const serving = await call('GET', '/model-health/serving?days=30', { token: admin });
+  check('Model Health reports primary and backup availability', serving.status === 200 && serving.data.serving === 'primary'
+    && serving.data.primary.available && serving.data.backup.inProcess?.available && serving.data.backup.replica?.available
+    && serving.data.backup.testAccuracy > 0.8, `primary ${serving.data.primary?.version}, backup ${serving.data.backup?.version} ${serving.data.backup?.testAccuracy}`);
+  check('Model Health counts predictions the backup served', serving.data.usage?.servedByBackup >= 1,
+    `${serving.data.usage?.servedByBackup} of ${serving.data.usage?.predictions} in 30 days`);
+  const servingDenied = await call('GET', '/model-health/serving', { token: doctor });
+  check('a doctor cannot read model serving status', servingDenied.status === 403);
   const drillDenied = await call('POST', '/admin/failover-drill', { token: doctor, body: { primaryDown: true } });
   check('a doctor cannot run the drill', drillDenied.status === 403);
 

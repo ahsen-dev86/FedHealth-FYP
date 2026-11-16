@@ -3,6 +3,7 @@
 // directory + NGO profiles). Mirrors the app's brand mark without the
 // authenticated sidebar shell.
 import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from './ui/button';
 
@@ -14,8 +15,12 @@ export default function PublicHeader() {
         <Link to="/" className="text-base font-bold tracking-tight text-foreground" aria-label="FedHealth home">
           Fed<span className="text-primary">Health</span>
         </Link>
-        <span className="text-sm text-muted-foreground">Help Portal</span>
+        <span className="hidden text-sm text-muted-foreground sm:inline">Help Portal</span>
         <div className="flex-1" />
+        {/* Visitors arrive here from the landing page; give them an obvious way back. */}
+        <Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/" data-testid="help-home" />}>
+          <ArrowLeft /> Home
+        </Button>
         <Button variant="outline" size="sm" nativeButton={false} render={<Link to={isAuthed ? '/app' : '/login'} />}>
           {isAuthed ? 'Back to app' : 'Log in'}
         </Button>
