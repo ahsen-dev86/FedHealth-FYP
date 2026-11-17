@@ -10,7 +10,11 @@
 //     output is kept as a short log tail for error reports.
 //   * Events are also appended to run-results/federation/<id>.jsonl, so the
 //     last runs survive a backend restart and can be replayed.
-//   * A run is a demonstration: it never registers or activates a model.
+//   * A run is a demonstration, isolated from the real model: the script
+//     writes no files and no database rows, only reads the model bundle, and
+//     checks the bundle's SHA-256 fingerprints are unchanged at the end. This
+//     runner never registers, activates or deploys anything; its only write is
+//     the event log below. FEDERATION_DEMO=off disables starting runs.
 // ---------------------------------------------------------------------------
 const { spawn } = require('child_process');
 const crypto = require('crypto');
@@ -36,6 +40,7 @@ const summary = (run) => run && ({
 });
 
 function available() {
+  if (!federation.enabled) return { ok: false, disabled: true, missing: ['turned off on this server (FEDERATION_DEMO=off)'] };
   const missing = [];
   if (!fs.existsSync(federation.python) && !/^python3?$/.test(federation.python)) missing.push('Python environment');
   if (!fs.existsSync(federation.script)) missing.push('live_federation.py');
@@ -126,7 +131,11 @@ function start(body, actor) {
       try {
         const event = JSON.parse(line.slice(5));
         record(run, event);
-        if (event.type === 'done') finish(run, 'finished');
+        if (event.type === 'done') {
+          // The script checks the deployed model files are untouched; anything else is a failure.
+          if (event.model_files_unchanged === true) finish(run, 'finished');
+          else finish(run, 'failed', 'the run did not confirm the deployed model files were unchanged');
+        }
         if (event.type === 'error') finish(run, 'failed', event.message);
       } catch { /* a malformed line is ignored, never fatal */ }
     }
@@ -164,6 +173,7 @@ function events(id, after = 0) {
 
 function overview() {
   return {
+    demonstrationOnly: true,
     available: available(),
     active: summary(active),
     recent: [...runs.values()].reverse().map(summary),

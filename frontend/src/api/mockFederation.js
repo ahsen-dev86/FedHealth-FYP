@@ -67,6 +67,7 @@ function schedule(settings) {
   }
   at(300, {
     type: 'done', rounds: settings.rounds, best_round: settings.rounds, final: val(settings.rounds), central_reference: CENTRAL,
+    model_files_unchanged: true, model_files_checked: 6,
     seconds: Math.round(t / 1000), deployed: false,
   });
   at(10, { type: 'status', status: 'finished' });
@@ -104,6 +105,7 @@ export function federationRoute({ method, pathname, params, body, session }) {
   if (pathname === '/model-health/federation' && method === 'GET') {
     if (active) visible(active);
     return {
+      demonstrationOnly: true,
       available: { ok: true, missing: [] },
       active: active ? visible(active).summary : null,
       recent: [...runs].reverse().map((r) => visible(r).summary),

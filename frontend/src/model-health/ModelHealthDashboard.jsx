@@ -47,7 +47,7 @@ function StatCard({ icon: Icon, label, value, sub, testId }) {
   );
 }
 
-const TABS = [['overview', 'Overview'], ['live', 'Federated training (live)']];
+const TABS = [['overview', 'Overview'], ['live', 'Federated training (demo)']];
 
 export default function ModelHealthDashboard() {
   // The tab lives in the URL (?tab=live) so it survives a reload and can be linked to.

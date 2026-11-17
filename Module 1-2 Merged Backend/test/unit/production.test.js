@@ -184,3 +184,19 @@ test('federated demo: only fixed choices are accepted, never free text', () => {
     assert.throws(() => Federation.parseSettings(bad), (e) => e.status === 400, JSON.stringify(bad));
   }
 });
+
+test('federated demo: FEDERATION_DEMO=off stops runs from starting, and the demo is marked demonstration-only', () => {
+  const config = require('../../src/config');
+  const Federation = require('../../src/services/federationRunner');
+  const saved = config.federation.enabled;
+  try {
+    config.federation.enabled = false;
+    const o = Federation.overview();
+    assert.equal(o.demonstrationOnly, true);
+    assert.equal(o.available.ok, false);
+    assert.equal(o.available.disabled, true);
+    assert.throws(() => Federation.start({ rounds: 1 }, null), (e) => e.status === 503 && /turned off/.test(e.message));
+  } finally {
+    config.federation.enabled = saved;
+  }
+});

@@ -22,7 +22,7 @@ import { conditionColor, conditionLabel, pct1, relativeTime } from '../lib/forma
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 
 const SPLITS = {
   iid: { label: 'Even split', hint: 'Every lab gets a similar mix of the four conditions, like labs serving similar populations.' },
@@ -301,9 +301,9 @@ function Controls({ onStart, busy, disabled }) {
             {[1, 3, 5, 8, 10, 15, 20].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        <Button className="h-9" disabled={busy || disabled} data-testid="fl-start"
+        <Button className="h-9" disabled={busy || disabled} data-testid="fl-start" title="Starts a demonstration run; the real model is not changed"
                 onClick={() => onStart({ split, start, encryption, rounds })}>
-          <Play /> {busy ? 'Starting…' : 'Start federated run'}
+          <Play /> {busy ? 'Starting…' : 'Start demo run'}
         </Button>
         <span className="text-xs text-muted-foreground">About {fmtDuration(estimate)} on this server. The model doctors use is not changed.</span>
       </div>
@@ -394,26 +394,36 @@ export default function LiveFederation() {
 
   return (
     <div className="space-y-5">
+      <Alert className="border-warning/40 bg-warning/5" data-testid="fl-demo-notice">
+        <ShieldCheck className="text-warning" />
+        <AlertTitle>Demonstration only: does not affect the real model</AlertTitle>
+        <AlertDescription>
+          Runs here never change the model doctors use: nothing is saved, registered or deployed, and each run checks
+          that the deployed model files are byte-for-byte unchanged. Real federated training will run on lab devices.
+        </AlertDescription>
+      </Alert>
       <Alert className="border-primary/30 bg-primary/5">
         <Info className="text-primary" />
         <AlertDescription>
           A real federated training run, streamed as it happens. Five simulated labs each keep their own share of the
           2,240 training rows; each round they train the shared network locally and send back only the weights. The
           labs run as separate parts of one program on this server; the data split, the training, the averaging and
-          the encryption are real. Runs are demonstrations and never change the model doctors use.
+          the encryption are real.
         </AlertDescription>
       </Alert>
 
       {err && <Alert variant="destructive"><AlertDescription>{err}</AlertDescription></Alert>}
       {unavailable && (
         <Alert className="border-warning/40"><AlertDescription>
-          Live runs are not available on this server (missing: {overview.available.missing.join(', ')}). Recorded runs can still be replayed.
+          {overview.available.disabled
+            ? 'The federated demonstration is turned off on this server.'
+            : `Live runs are not available on this server (missing: ${overview.available.missing.join(', ')}).`} Recorded runs can still be replayed.
         </AlertDescription></Alert>
       )}
 
       {canRun && !running && (
         <Card>
-          <CardHeader><CardTitle>Start a federated run</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Start a demonstration run</CardTitle></CardHeader>
           <CardContent><Controls onStart={startRun} busy={busy} disabled={unavailable || !!overview?.active} /></CardContent>
         </Card>
       )}
@@ -469,7 +479,7 @@ export default function LiveFederation() {
                 <p className="text-muted-foreground">
                   The labs exchanged {fmtBytes(st.exchanged)} of model weights and no patient records.
                   {st.lastAggregate?.encrypted ? ' Every update was encrypted, and the encrypted sum matched plain averaging exactly.' : ''}
-                  {' '}Run time {fmtDuration(st.done.seconds)}. This run was not deployed.
+                  {' '}Run time {fmtDuration(st.done.seconds)}. This run was not deployed{st.done.model_files_unchanged ? `, and all ${st.done.model_files_checked} deployed model files were verified unchanged` : ''}.
                 </p>
                 <RecallTable st={st} />
               </CardContent>

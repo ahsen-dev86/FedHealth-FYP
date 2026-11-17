@@ -231,20 +231,24 @@ test('Model Health live tab: an admin runs a federated demo and watches the labs
   await page.getByRole('link', { name: 'Model Health' }).first().click();
   await page.getByTestId('mh-tab-live').click();
   await expect(page).toHaveURL(/tab=live/);
+  await expect(page.getByTestId('mh-tab-live')).toHaveText('Federated training (demo)');
+  await expect(page.getByTestId('fl-demo-notice')).toContainText('does not affect the real model');
   await expect(page.getByTestId('fl-controls')).toBeVisible();
   await page.getByLabel('One real dataset per lab').check();
   await page.getByTestId('fl-rounds').selectOption('3');
   await page.getByTestId('fl-start').click();
+  const scrollAtStart = await page.evaluate(() => window.scrollY);
   await expect(page.getByTestId('fl-settings')).toContainText('One real dataset per lab');
   await expect(page.getByTestId('fl-lab-lab-02')).toContainText('LeukoAlert dataset');
   await expect(page.getByTestId('fl-lab-lab-02')).toContainText('953 rows');
   await expect(page.getByTestId('fl-log')).toContainText('0 patient rows', { timeout: 15000 });
   await expect(page.getByTestId('fl-summary')).toContainText('validation accuracy', { timeout: 40000 });
   await expect(page.getByTestId('fl-summary')).toContainText('not deployed');
+  await expect(page.getByTestId('fl-summary')).toContainText('deployed model files were verified unchanged');
   await expect(page.getByTestId('fl-summary')).toContainText('labs\' data differ');
   await expect(page.getByTestId('fl-recent')).toContainText('finished');
-  // The page did not jump while the log grew.
-  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  // The page did not jump while the log grew (the log scrolls inside its own box).
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollAtStart);
 });
 
 test('Model Health live tab: a health official can watch but has no start button', async ({ page }) => {
