@@ -198,6 +198,41 @@ async function main() {
   const doctorNgo = await call('GET', `/help/ngos/me?ngo=${ngo.id}`, { token: doctor });
   check('a doctor cannot manage NGOs', doctorNgo.status === 403);
 
+  // 6b. live federated-learning demonstration (a real 2-round run, about a minute)
+  const nihAccount = acct.nih;
+  const nih = nihAccount ? await signIn(nihAccount) : null;
+  const flDoctor = await call('GET', '/model-health/federation', { token: doctor });
+  check('a doctor cannot see the federated demo', flDoctor.status === 403);
+  if (nih) {
+    const nihStart = await call('POST', '/model-health/federation/runs', { token: nih, body: { rounds: 1 } });
+    check('a health official can watch but not start a run', nihStart.status === 403);
+  }
+  const badRun = await call('POST', '/model-health/federation/runs', { token: admin, body: { rounds: 99 } });
+  check('an out-of-range run is refused', badRun.status === 400, badRun.data.error);
+  const started = await call('POST', '/model-health/federation/runs', {
+    token: admin, body: { split: 'iid', start: 'scratch', encryption: 'none', rounds: 2 } });
+  check('admin starts a federated run', started.status === 202 && started.data.status === 'running', started.data.error || started.data.id);
+  const second = await call('POST', '/model-health/federation/runs', { token: admin, body: { rounds: 1 } });
+  check('only one run at a time', second.status === 409);
+  let fl = { run: { status: 'running' }, events: [] };
+  const deadline = Date.now() + 240000;
+  while (fl.run.status === 'running' && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3000));
+    fl = (await call('GET', `/model-health/federation/runs/${started.data.id}/events?after=0`, { token: nih || admin })).data;
+  }
+  const vals = fl.events.filter((e) => e.type === 'validation');
+  const updates = fl.events.filter((e) => e.type === 'lab_update');
+  const flSetup = fl.events.find((e) => e.type === 'setup');
+  check('the run finished with 5 labs and 2 rounds', fl.run.status === 'finished' && flSetup?.labs.length === 5 && vals.length === 3,
+    `${fl.run.status}, ${vals.length} validations`);
+  check('every lab sent an update each round and no patient rows', updates.length === 10 && updates.every((u) => u.patient_rows_sent === 0 && u.update_bytes > 0));
+  check('the global network learned from the labs', vals[2]?.accuracy > vals[0]?.accuracy + 0.3,
+    vals.map((v) => `r${v.round} ${(v.accuracy * 100).toFixed(1)}%`).join(' -> '));
+  const done = fl.events.find((e) => e.type === 'done');
+  check('the run was not deployed', done?.deployed === false);
+  const servingAfter = await call('GET', '/model-health/serving', { token: admin });
+  check('the serving model is unchanged after the run', servingAfter.data.primary?.version === serving.data.primary?.version);
+
   // 7. voice dictation
   const audioAt = process.argv.indexOf('--audio');
   if (audioAt > -1) {

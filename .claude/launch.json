@@ -19,6 +19,13 @@
       "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "5176", "--strictPort"],
       "env": { "VITE_USE_MOCK": "true", "VITE_CACHE_DIR": "node_modules/.vite-e2e-mock" },
       "port": 5176
+    },
+    {
+      "name": "frontend-live",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "5177", "--strictPort"],
+      "env": { "VITE_USE_MOCK": "false", "VITE_CACHE_DIR": "node_modules/.vite-live" },
+      "port": 5177
     }
   ]
 }

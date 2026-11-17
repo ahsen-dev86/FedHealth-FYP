@@ -225,3 +225,33 @@ test('Help Portal has a way back to the landing page', async ({ page }) => {
   await page.getByTestId('help-home').click();
   await expect(page.getByTestId('landing')).toBeVisible();
 });
+
+test('Model Health live tab: an admin runs a federated demo and watches the labs and the learning curve', async ({ page }) => {
+  await signIn(page, 'admin@fedhealth.demo');
+  await page.getByRole('link', { name: 'Model Health' }).first().click();
+  await page.getByTestId('mh-tab-live').click();
+  await expect(page).toHaveURL(/tab=live/);
+  await expect(page.getByTestId('fl-controls')).toBeVisible();
+  await page.getByLabel('One real dataset per lab').check();
+  await page.getByTestId('fl-rounds').selectOption('3');
+  await page.getByTestId('fl-start').click();
+  await expect(page.getByTestId('fl-settings')).toContainText('One real dataset per lab');
+  await expect(page.getByTestId('fl-lab-lab-02')).toContainText('LeukoAlert dataset');
+  await expect(page.getByTestId('fl-lab-lab-02')).toContainText('953 rows');
+  await expect(page.getByTestId('fl-log')).toContainText('0 patient rows', { timeout: 15000 });
+  await expect(page.getByTestId('fl-summary')).toContainText('validation accuracy', { timeout: 40000 });
+  await expect(page.getByTestId('fl-summary')).toContainText('not deployed');
+  await expect(page.getByTestId('fl-summary')).toContainText('labs\' data differ');
+  await expect(page.getByTestId('fl-recent')).toContainText('finished');
+  // The page did not jump while the log grew.
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test('Model Health live tab: a health official can watch but has no start button', async ({ page }) => {
+  await signIn(page, 'officer8@nih.org.pk');
+  await page.getByRole('link', { name: 'Model Health' }).click();
+  await page.getByTestId('mh-tab-live').click();
+  await expect(page.getByText('A real federated training run')).toBeVisible();
+  await expect(page.getByTestId('fl-controls')).toHaveCount(0);
+  await expect(page.getByTestId('fl-start')).toHaveCount(0);
+});

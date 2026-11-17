@@ -8,6 +8,7 @@
 import { CLASSES, FEATURES, CANONICAL_UNITS, FEATURE_LABELS } from '../lib/contract.js';
 import { generateRef, patientRefError, normalizeRef } from '../lib/patientRef.js';
 import guidance from '../lib/clinicalGuidance.json' with { type: 'json' };
+import { federationRoute } from './mockFederation.js';
 
 const delay = (ms = 300) => new Promise((res) => setTimeout(res, ms));
 export function mockError(status, message, code) {
@@ -157,6 +158,10 @@ const recordKey = (cbc, label) => `${FEATURES.map((f) => (cbc[f] == null ? '' : 
  */
 export async function extraRoute({ method, pathname, params, body, session, ngoDirectory, supplyRequests }) {
   const isAdmin = session?.role === 'admin';
+
+  // Federated training (live): replays of recorded real runs (mockFederation.js).
+  const fl = federationRoute({ method, pathname, params, body, session });
+  if (fl !== undefined) { await delay(120); return fl; }
 
   if (pathname === '/patients/new-ref' && method === 'GET') {
     await delay(150);

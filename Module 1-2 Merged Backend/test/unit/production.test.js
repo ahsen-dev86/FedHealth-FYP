@@ -173,3 +173,14 @@ test('inference failover: a dead primary falls over to the backup replica; input
     delete require.cache[require.resolve('../../src/services/inferenceClient')];
   }
 });
+
+test('federated demo: only fixed choices are accepted, never free text', () => {
+  const Federation = require('../../src/services/federationRunner');
+  assert.deepEqual(Federation.parseSettings({}), { split: 'iid', start: 'scratch', encryption: 'none', rounds: 10, labs: 5 });
+  assert.deepEqual(Federation.parseSettings({ split: 'source', start: 'deployed', encryption: 'paillier-2048', rounds: 3 }),
+    { split: 'source', start: 'deployed', encryption: 'paillier-2048', rounds: 3, labs: 5 });
+  for (const bad of [{ split: 'iid; rm -rf /' }, { start: '--model=/etc' }, { encryption: 'rsa' }, { rounds: 0 }, { rounds: 31 },
+    { rounds: 2.5 }, { rounds: '3; echo' }]) {
+    assert.throws(() => Federation.parseSettings(bad), (e) => e.status === 400, JSON.stringify(bad));
+  }
+});

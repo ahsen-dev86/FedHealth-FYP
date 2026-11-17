@@ -8,7 +8,11 @@ require('dotenv').config();
 
 const fs = require('fs');
 
+const path = require('path');
+
 const isProd = process.env.NODE_ENV === 'production';
+const REPO_ROOT = path.resolve(__dirname, '../../..');
+const venvPython = path.join(REPO_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 
 // Windows installers put tesseract outside PATH; fall back to PATH lookup elsewhere.
 function defaultTesseract() {
@@ -63,6 +67,17 @@ module.exports = {
     fallbackUrl: (process.env.INFERENCE_FALLBACK_URL || '').replace(/\/+$/, ''),
     // After a primary failure, skip straight to the fallback for this long.
     breakerMs: parseInt(process.env.INFERENCE_BREAKER_MS || '15000', 10),
+  },
+
+  // Live federated-learning demonstration (Module 4 FL/live_federation.py).
+  federation: {
+    root: REPO_ROOT,
+    python: process.env.FEDERATION_PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python3'),
+    script: path.join(REPO_ROOT, 'Module 4 FL', 'live_federation.py'),
+    // The verified centralized bundle: shared preprocessor + round-zero network.
+    modelDir: process.env.FEDERATION_MODEL_DIR
+      || path.join(REPO_ROOT, 'FYP_model_data_drive/FYP/four_class/four_class_v1/seed42/centralized/model'),
+    eventsDir: process.env.FEDERATION_EVENTS_DIR || path.join(REPO_ROOT, 'run-results', 'federation'),
   },
 
   // Local Whisper speech-to-text service (Module 6 Domain API/speech_service.py).

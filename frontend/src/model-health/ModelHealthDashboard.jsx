@@ -22,6 +22,8 @@ import NodeContributionChart from './NodeContributionChart';
 import TrainingDataCharts from './TrainingDataCharts';
 import DataIntakeCharts from './DataIntakeCharts';
 import ModelServingCard from './ModelServingCard';
+import LiveFederation from './LiveFederation';
+import { useSearchParams } from 'react-router-dom';
 
 const SPANS = [
   ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'],
@@ -45,7 +47,12 @@ function StatCard({ icon: Icon, label, value, sub, testId }) {
   );
 }
 
+const TABS = [['overview', 'Overview'], ['live', 'Federated training (live)']];
+
 export default function ModelHealthDashboard() {
+  // The tab lives in the URL (?tab=live) so it survives a reload and can be linked to.
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'live' ? 'live' : 'overview';
   const [summary, setSummary] = useState(null);
   const [runs, setRuns] = useState(null);
   const [runId, setRunId] = useState(null);
@@ -94,8 +101,21 @@ export default function ModelHealthDashboard() {
       <div className="mb-4.5">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-primary">Registered model · federated learning records</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">AI Model Health</h1>
-        {err && <p className="mt-1 text-sm text-destructive">{err}</p>}
+        {err && tab === 'overview' && <p className="mt-1 text-sm text-destructive">{err}</p>}
       </div>
+
+      <div className="mb-5 flex w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1 sm:w-fit" role="tablist" aria-label="Model Health views">
+        {TABS.map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`mh-tab-${key}`}
+                  onClick={() => setParams(key === 'overview' ? {} : { tab: key }, { replace: true })}
+                  className={`h-9 flex-1 shrink-0 whitespace-nowrap rounded-md px-3.5 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:flex-none ${
+                    tab === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'live' ? <LiveFederation /> : (<>
 
       <div className="mb-5 grid grid-cols-2 gap-3.5 lg:grid-cols-5">
         <StatCard icon={Gauge} label="Test accuracy (hybrid)" testId="stat-accuracy"
@@ -177,6 +197,7 @@ export default function ModelHealthDashboard() {
         </CardHeader>
         <CardContent><DataIntakeCharts intake={intake} /></CardContent>
       </Card>
+      </>)}
     </div>
   );
 }
