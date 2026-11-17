@@ -71,6 +71,9 @@ module.exports = {
 
   // Live federated-learning demonstration (Module 4 FL/live_federation.py).
   federation: {
+    // A demonstration only; it never affects the real model. FEDERATION_DEMO=off
+    // removes it from a server (e.g. once real lab devices run the federation).
+    enabled: (process.env.FEDERATION_DEMO || 'on').toLowerCase() !== 'off',
     root: REPO_ROOT,
     python: process.env.FEDERATION_PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python3'),
     script: path.join(REPO_ROOT, 'Module 4 FL', 'live_federation.py'),

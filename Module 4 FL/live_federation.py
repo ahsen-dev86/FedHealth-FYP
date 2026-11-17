@@ -18,8 +18,15 @@ Starting points:
   * scratch:  a freshly initialised network, so the rounds visibly learn;
   * deployed: the verified centralized network (round zero of the evaluated
     experiments), which federated rounds only fine-tune.
-The result is a demonstration: nothing is written to the model registry and
-the serving model is never changed.
+The result is a demonstration and is isolated from the real model:
+  * this script writes no files and touches no database; its only output is
+    the event stream on stdout;
+  * it only reads the model bundle, and it proves that by fingerprinting
+    (SHA-256) every file in the bundle before and after the run. A changed
+    file stops the run with an error ("model_files_unchanged" is reported in
+    the final event);
+  * nothing is registered, activated or deployed, and the inference service
+    that answers doctors never sees this process.
 
     python "Module 4 FL/live_federation.py" --model <centralized bundle> \
         --mode source --start scratch --rounds 10 [--encrypted]
@@ -64,6 +71,11 @@ def emit(kind, **payload):
     print("@@FL " + json.dumps({"type": kind, "t": round(time.time(), 3), **payload}, default=float), flush=True)
 
 
+def fingerprint(model_dir):
+    """SHA-256 of every file in the model bundle, keyed by file name."""
+    return {f.name: sha256(f) for f in sorted(Path(model_dir).iterdir()) if f.is_file()}
+
+
 def class_counts(frame):
     return {c: int((frame.label == c).sum()) for c in schema.CLASSES}
 
@@ -84,6 +96,7 @@ def summarize(metrics):
 
 def run(dataset, model_dir, *, rounds, labs, mode, start, encrypted, bits, seed, local_epochs, lr):
     t0 = time.time()
+    before = fingerprint(model_dir)
     prep, hybrid, meta = load_bundle(model_dir, data_sha256=dataset.sha256)
     train = dataset.rows("train")
     if meta["fit_row_ids"] != train.row_id.tolist():
@@ -194,7 +207,12 @@ def run(dataset, model_dir, *, rounds, labs, mode, start, encrypted, bits, seed,
         emit("validation", round=rnd, round_seconds=round(time.time() - r0, 2), **summarize(tracker.history[-1]))
 
     best = tracker.best_round
-    emit("done", rounds=rounds, best_round=best,
+    after = fingerprint(model_dir)
+    if after != before:
+        changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+        raise RuntimeError(f"The deployed model files changed during the demo: {changed}")
+    emit("done", rounds=rounds, best_round=best, model_files_unchanged=True,
+         model_files_checked=len(after),
          best=summarize(tracker.best_metrics) if tracker.best_metrics else None,
          final=summarize(tracker.history[-1]), central_reference=central, seconds=round(time.time() - t0, 1),
          deployed=False)

@@ -230,6 +230,8 @@ async function main() {
     vals.map((v) => `r${v.round} ${(v.accuracy * 100).toFixed(1)}%`).join(' -> '));
   const done = fl.events.find((e) => e.type === 'done');
   check('the run was not deployed', done?.deployed === false);
+  check('the deployed model files were fingerprinted unchanged', done?.model_files_unchanged === true && done?.model_files_checked >= 5,
+    `${done?.model_files_checked} files checked`);
   const servingAfter = await call('GET', '/model-health/serving', { token: admin });
   check('the serving model is unchanged after the run', servingAfter.data.primary?.version === serving.data.primary?.version);
 
