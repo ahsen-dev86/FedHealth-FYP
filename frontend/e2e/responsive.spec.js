@@ -135,3 +135,19 @@ test('admin console and the admin NGO portal fit a phone; the sidebar opens as a
   await expect(page.getByRole('dialog')).toHaveCount(0); // the drawer closed after navigating
   await checkAt(page, 'admin NGO portal');
 });
+
+test('Model Health live federated tab fits a phone, before and during a run', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, 'admin8@fedhealth.demo');
+  // Navigate inside the app (the mock keeps its state in memory).
+  await page.getByRole('button', { name: /Toggle Sidebar/i }).click();
+  await page.getByRole('dialog').getByText('Model Health').click();
+  await page.getByTestId('mh-tab-live').click();
+  await expect(page.getByTestId('fl-controls')).toBeVisible();
+  await checkAt(page, 'live federation (controls)');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId('fl-rounds').selectOption('1');
+  await page.getByTestId('fl-start').click();
+  await expect(page.getByTestId('fl-lab-lab-04')).toBeVisible({ timeout: 15000 });
+  await checkAt(page, 'live federation (running)');
+});

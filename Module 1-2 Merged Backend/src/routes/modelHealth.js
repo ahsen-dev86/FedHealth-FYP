@@ -16,8 +16,12 @@ const MlModels = require('../models/mlModels');
 const Inference = require('../services/inferenceClient');
 const { query } = require('../db/pool');
 const { contract } = require('../contract');
+const Federation = require('../services/federationRunner');
+const { auditAction } = require('../middleware/audit');
+const { HttpError, uuidParam } = require('../middleware/errors');
 
 const router = express.Router();
+router.param('runId', uuidParam);
 const gate = [requireAuth, requirePermission('nih:dashboard')];
 const daysOf = (req) => Math.min(Math.max(Number(req.query.days) || 30, 1), 365); // clamp ?days= to 1..365, default 30
 
@@ -98,6 +102,37 @@ router.get('/serving', ...gate, asyncHandler(async (req, res) => {
     usage: { days, predictions: usage.total, servedByBackup: usage.backup, lastServedByBackupAt: usage.last_backup_at },
   });
 }));
+
+// --- Live federated-learning demonstration -----------------------------------
+// Health officials and administrators can watch; only administrators
+// (model:register) can start or stop a run. A run never changes the serving model.
+const asHttp = (fn) => asyncHandler(async (req, res) => {
+  try { await fn(req, res); } catch (e) { throw e.status ? new HttpError(e.status, e.message) : e; }
+});
+
+router.get('/federation', ...gate, asHttp(async (req, res) => {
+  res.json(Federation.overview());
+}));
+
+router.get('/federation/runs/:runId/events', ...gate, asHttp(async (req, res) => {
+  res.json(Federation.events(req.params.runId, req.query.after));
+}));
+
+router.post('/federation/runs', requireAuth,
+  auditAction('FEDERATION_DEMO_START', (req, res) => ({ type: 'fl_demo_run', id: res.locals.runId })),
+  requirePermission('model:register'),
+  asHttp(async (req, res) => {
+    const run = Federation.start(req.body, req.user);
+    res.locals.runId = run.id;
+    res.status(202).json(run);
+  }));
+
+router.post('/federation/runs/:runId/stop', requireAuth,
+  auditAction('FEDERATION_DEMO_STOP', (req) => ({ type: 'fl_demo_run', id: req.params.runId })),
+  requirePermission('model:register'),
+  asHttp(async (req, res) => {
+    res.json(Federation.stop(req.params.runId));
+  }));
 
 router.get('/limitations', ...gate, asyncHandler(async (req, res) => {
   res.json(await ModelHealth.limitations());
